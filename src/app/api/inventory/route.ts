@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 interface InventoryItemInput {
+  id?: string  // Present for existing items
   name: string
   storage_category: string
   nutritional_type: string
@@ -13,15 +14,6 @@ interface InventoryItemInput {
   confidence: number
 }
 
-interface ExistingItem {
-  id: string
-  name: string
-  location: string
-  storage_category: string
-  quantity: number
-  unit: string
-}
-
 // Normalize item name for matching (lowercase, trim, remove plurals)
 function normalizeItemName(name: string): string {
   return name
@@ -29,15 +21,6 @@ function normalizeItemName(name: string): string {
     .trim()
     .replace(/s$/, '') // Remove trailing 's' for basic plural handling
     .replace(/ies$/, 'y') // berries -> berry
-}
-
-// Check if two items are the same (match by name and location)
-function itemsMatch(newItem: InventoryItemInput, existing: ExistingItem): boolean {
-  const newName = normalizeItemName(newItem.name)
-  const existingName = normalizeItemName(existing.name)
-
-  // Match if same normalized name AND same location
-  return newName === existingName && newItem.location === existing.location
 }
 
 export async function POST(request: NextRequest) {
@@ -50,120 +33,192 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { items, mergeMode = 'replace' } = body as {
+    const { items, location, syncMode = false } = body as {
       items: InventoryItemInput[]
-      mergeMode?: 'replace' | 'add' | 'skip'
+      location?: string
+      syncMode?: boolean
     }
 
-    if (!items || items.length === 0) {
+    if (!items) {
       return NextResponse.json({ error: 'No items provided' }, { status: 400 })
     }
 
-    // Fetch existing inventory items for this user (non-consumed only)
+    // SYNC MODE: Full replacement for a location
+    // This is the new smart merge - items with qty=0 get deleted, others get upserted
+    if (syncMode && location) {
+      const deleted: string[] = []
+      const updated: string[] = []
+      const inserted: string[] = []
+
+      // Get existing items for this location
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existingItems } = await (supabase as any)
+        .from('inventory_items')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .eq('location', location)
+        .is('consumed_at', null)
+
+      const existingIds = new Set((existingItems || []).map((e: { id: string }) => e.id))
+      const incomingIds = new Set(items.filter(i => i.id).map(i => i.id as string))
+
+      // Find items to delete (in existing but not in incoming, OR qty = 0)
+      const itemsToDelete = items.filter(i => i.id && i.quantity === 0)
+      const orphanedIds = [...existingIds].filter(id => !incomingIds.has(id as string))
+
+      // Delete items with qty = 0
+      for (const item of itemsToDelete) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('inventory_items')
+          .delete()
+          .eq('id', item.id)
+        deleted.push(item.name)
+      }
+
+      // Delete orphaned items (in DB but not in incoming list)
+      for (const id of orphanedIds) {
+        const orphan = (existingItems || []).find((e: { id: string; name: string }) => e.id === id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('inventory_items')
+          .delete()
+          .eq('id', id)
+        if (orphan) deleted.push(orphan.name)
+      }
+
+      // Process items with qty > 0
+      const validItems = items.filter(i => i.quantity > 0)
+
+      for (const item of validItems) {
+        if (item.id && existingIds.has(item.id)) {
+          // Update existing item
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('inventory_items')
+            .update({
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              storage_category: item.storage_category,
+              nutritional_type: item.nutritional_type,
+              expiry_date: item.expiry_date,
+              freshness: item.freshness,
+              confidence: item.confidence,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', item.id)
+          updated.push(item.name)
+        } else {
+          // Insert new item
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('inventory_items')
+            .insert({
+              user_id: user.id,
+              name: item.name,
+              storage_category: item.storage_category,
+              nutritional_type: item.nutritional_type,
+              location: location,
+              quantity: item.quantity,
+              unit: item.unit,
+              expiry_date: item.expiry_date,
+              freshness: item.freshness,
+              confidence: item.confidence,
+            })
+          inserted.push(item.name)
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        inserted: inserted.length,
+        updated: updated.length,
+        deleted: deleted.length,
+        insertedItems: inserted,
+        updatedItems: updated,
+        deletedItems: deleted,
+        message: `Added ${inserted.length}, updated ${updated.length}, removed ${deleted.length} items`,
+      })
+    }
+
+    // LEGACY MODE: Simple insert for backward compatibility (first-time scans)
+    if (items.length === 0) {
+      return NextResponse.json({
+        success: true,
+        inserted: 0,
+        updated: 0,
+        deleted: 0,
+        message: 'No items to save',
+      })
+    }
+
+    // Get existing items for matching
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingItems, error: fetchError } = await (supabase as any)
+    const { data: existingItems } = await (supabase as any)
       .from('inventory_items')
-      .select('id, name, location, storage_category, quantity, unit')
+      .select('id, name, location, quantity')
       .eq('user_id', user.id)
       .is('consumed_at', null)
 
-    if (fetchError) {
-      console.error('Failed to fetch existing items:', fetchError)
-      return NextResponse.json({ error: 'Failed to check existing inventory' }, { status: 500 })
-    }
-
-    const existing: ExistingItem[] = existingItems || []
-    const itemsToInsert: Array<Record<string, unknown>> = []
-    const itemsToUpdate: Array<{ id: string; quantity: number; expiry_date: string; freshness: string }> = []
-    const skippedItems: string[] = []
-    const mergedItems: string[] = []
+    const existing = existingItems || []
+    const insertedItems: string[] = []
+    const updatedItems: string[] = []
 
     for (const item of items) {
-      // Find matching existing item
-      const matchingItem = existing.find(e => itemsMatch(item, e))
+      // Find matching existing item by normalized name and location
+      const match = existing.find((e: { name: string; location: string }) =>
+        normalizeItemName(e.name) === normalizeItemName(item.name) &&
+        e.location === item.location
+      )
 
-      if (matchingItem) {
-        if (mergeMode === 'skip') {
-          // Skip - don't update existing item
-          skippedItems.push(item.name)
-        } else if (mergeMode === 'add') {
-          // Add - increment quantity
-          itemsToUpdate.push({
-            id: matchingItem.id,
-            quantity: matchingItem.quantity + item.quantity,
-            expiry_date: item.expiry_date,
-            freshness: item.freshness,
-          })
-          mergedItems.push(`${item.name} (+${item.quantity})`)
-        } else {
-          // Replace (default) - set to new quantity
-          itemsToUpdate.push({
-            id: matchingItem.id,
+      if (match) {
+        // Update existing
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('inventory_items')
+          .update({
             quantity: item.quantity,
+            unit: item.unit,
+            storage_category: item.storage_category,
+            nutritional_type: item.nutritional_type,
             expiry_date: item.expiry_date,
             freshness: item.freshness,
+            confidence: item.confidence,
+            updated_at: new Date().toISOString(),
           })
-          mergedItems.push(`${item.name} (→${item.quantity})`)
-        }
+          .eq('id', match.id)
+        updatedItems.push(item.name)
       } else {
-        // New item - insert
-        itemsToInsert.push({
-          user_id: user.id,
-          name: item.name,
-          storage_category: item.storage_category,
-          nutritional_type: item.nutritional_type,
-          location: item.location,
-          quantity: item.quantity,
-          unit: item.unit,
-          expiry_date: item.expiry_date,
-          freshness: item.freshness,
-          confidence: item.confidence,
-        })
+        // Insert new
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('inventory_items')
+          .insert({
+            user_id: user.id,
+            name: item.name,
+            storage_category: item.storage_category,
+            nutritional_type: item.nutritional_type,
+            location: item.location,
+            quantity: item.quantity,
+            unit: item.unit,
+            expiry_date: item.expiry_date,
+            freshness: item.freshness,
+            confidence: item.confidence,
+          })
+        insertedItems.push(item.name)
       }
-    }
-
-    // Perform updates
-    for (const update of itemsToUpdate) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: updateError } = await (supabase as any)
-        .from('inventory_items')
-        .update({
-          quantity: update.quantity,
-          expiry_date: update.expiry_date,
-          freshness: update.freshness,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', update.id)
-
-      if (updateError) {
-        console.error('Failed to update item:', updateError)
-      }
-    }
-
-    // Perform inserts
-    let insertedData = []
-    if (itemsToInsert.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: insertError } = await (supabase as any)
-        .from('inventory_items')
-        .insert(itemsToInsert)
-        .select()
-
-      if (insertError) {
-        console.error('Database insert error:', insertError)
-        return NextResponse.json({ error: 'Failed to save new items' }, { status: 500 })
-      }
-      insertedData = data || []
     }
 
     return NextResponse.json({
       success: true,
-      inserted: insertedData.length,
-      updated: itemsToUpdate.length,
-      skipped: skippedItems.length,
-      mergedItems,
-      skippedItems,
-      message: `Added ${insertedData.length} new items, updated ${itemsToUpdate.length} existing items${skippedItems.length > 0 ? `, skipped ${skippedItems.length}` : ''}`,
+      inserted: insertedItems.length,
+      updated: updatedItems.length,
+      deleted: 0,
+      insertedItems,
+      updatedItems,
+      deletedItems: [],
+      message: `Added ${insertedItems.length}, updated ${updatedItems.length} items`,
     })
   } catch (error) {
     console.error('Inventory save error:', error)
@@ -174,7 +229,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -183,13 +238,23 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Get optional location filter from query params
+    const { searchParams } = new URL(request.url)
+    const location = searchParams.get('location')
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
+    let query = (supabase as any)
       .from('inventory_items')
       .select('*')
       .eq('user_id', user.id)
       .is('consumed_at', null)
-      .order('expiry_date', { ascending: true })
+
+    // Apply location filter if provided
+    if (location) {
+      query = query.eq('location', location)
+    }
+
+    const { data, error } = await query.order('expiry_date', { ascending: true })
 
     if (error) {
       console.error('Database error:', error)

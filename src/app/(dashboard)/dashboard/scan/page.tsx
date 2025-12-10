@@ -7,6 +7,7 @@ import Link from 'next/link'
 type Location = 'fridge' | 'freezer' | 'pantry'
 
 interface DetectedItem {
+  id?: string  // Present for existing items from inventory
   name: string
   storage_category: string
   nutritional_type: string
@@ -17,6 +18,20 @@ interface DetectedItem {
   confidence: number
   location: string
   selected: boolean
+  notDetected?: boolean  // True for items in inventory but not seen in scan
+}
+
+interface ExistingInventoryItem {
+  id: string
+  name: string
+  storage_category: string
+  nutritional_type: string
+  quantity: number
+  unit: string
+  expiry_date: string
+  freshness: string
+  confidence: number
+  location: string
 }
 
 const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen']
@@ -24,15 +39,23 @@ const NUTRITIONAL_TYPES = ['vegetables', 'protein', 'carbs', 'vitamins', 'fats',
 const UNITS = ['piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
 const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
 
-type MergeMode = 'replace' | 'add' | 'skip'
-
 interface SaveResult {
   inserted: number
   updated: number
-  skipped: number
-  mergedItems: string[]
-  skippedItems: string[]
+  deleted: number
+  insertedItems: string[]
+  updatedItems: string[]
+  deletedItems: string[]
   message: string
+}
+
+// Normalize item name for matching (lowercase, trim, remove plurals)
+function normalizeItemName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/s$/, '')
+    .replace(/ies$/, 'y')
 }
 
 export default function ScanPage() {
@@ -44,7 +67,6 @@ export default function ScanPage() {
   const [saving, setSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [converting, setConverting] = useState(false)
-  const [mergeMode, setMergeMode] = useState<MergeMode>('replace')
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -57,11 +79,9 @@ export default function ScanPage() {
   // Convert HEIC to JPEG using canvas
   const convertToJpeg = async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // Check if it's a HEIC file
       const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic')
 
       if (isHeic) {
-        // For HEIC, we need to use heic2any library
         import('heic2any').then(async (heic2any) => {
           try {
             const blob = await heic2any.default({
@@ -75,7 +95,6 @@ export default function ScanPage() {
             reader.readAsDataURL(blob as Blob)
           } catch (err) {
             console.error('HEIC conversion failed:', err)
-            // Fallback: try to read as-is
             const reader = new FileReader()
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = reject
@@ -83,7 +102,6 @@ export default function ScanPage() {
           }
         })
       } else {
-        // For other image types, read directly
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
         reader.onerror = reject
@@ -108,7 +126,6 @@ export default function ScanPage() {
       setError('Failed to process some images. Please try again.')
     } finally {
       setConverting(false)
-      // Reset the input so the same file can be selected again
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -129,25 +146,64 @@ export default function ScanPage() {
     setStep('processing')
 
     try {
-      const response = await fetch('/api/scan', {
+      // Step 1: Analyze images with AI
+      const scanResponse = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ images, location }),
       })
 
-      if (!response.ok) {
+      if (!scanResponse.ok) {
         throw new Error('Failed to analyze images')
       }
 
-      const data = await response.json()
+      const scanData = await scanResponse.json()
 
-      // Add selected flag to each item
-      const itemsWithSelection = data.items.map((item: DetectedItem) => ({
-        ...item,
-        selected: item.confidence >= 0.7, // Auto-select high confidence items
-      }))
+      // Step 2: Fetch existing inventory for this location
+      const inventoryResponse = await fetch(`/api/inventory?location=${location}`)
+      const inventoryData = await inventoryResponse.json()
+      const existingItems: ExistingInventoryItem[] = inventoryData.items || []
 
-      setDetectedItems(itemsWithSelection)
+      // Step 3: Build normalized name map of detected items
+      const detectedNames = new Set(
+        scanData.items.map((item: DetectedItem) => normalizeItemName(item.name))
+      )
+
+      // Step 4: Find existing items that were NOT detected (will show as qty=0)
+      const undetectedItems: DetectedItem[] = existingItems
+        .filter(item => !detectedNames.has(normalizeItemName(item.name)))
+        .map(item => ({
+          id: item.id,
+          name: item.name,
+          storage_category: item.storage_category,
+          nutritional_type: item.nutritional_type,
+          quantity: 0,  // Mark as not detected
+          unit: item.unit,
+          expiry_date: item.expiry_date,
+          freshness: item.freshness,
+          confidence: 0,
+          location: item.location,
+          selected: true,  // Include by default so it gets processed
+          notDetected: true,  // Visual flag
+        }))
+
+      // Step 5: For detected items, check if they match existing items (to preserve ID)
+      const detectedWithIds = scanData.items.map((item: DetectedItem) => {
+        const normalizedName = normalizeItemName(item.name)
+        const existingMatch = existingItems.find(
+          e => normalizeItemName(e.name) === normalizedName
+        )
+        return {
+          ...item,
+          id: existingMatch?.id,  // Attach existing ID if found
+          selected: item.confidence >= 0.7,
+          notDetected: false,
+        }
+      })
+
+      // Step 6: Merge: detected items first, then undetected items
+      const mergedItems = [...detectedWithIds, ...undetectedItems]
+      setDetectedItems(mergedItems)
       setStep('review')
     } catch (err) {
       console.error('Analysis error:', err)
@@ -180,11 +236,6 @@ export default function ScanPage() {
   const handleSave = async () => {
     const selectedItems = detectedItems.filter(item => item.selected)
 
-    if (selectedItems.length === 0) {
-      setError('Please select at least one item to save')
-      return
-    }
-
     setSaving(true)
     setError(null)
 
@@ -192,7 +243,11 @@ export default function ScanPage() {
       const response = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: selectedItems, mergeMode }),
+        body: JSON.stringify({
+          items: selectedItems,
+          location: location,
+          syncMode: true,  // Enable smart sync
+        }),
       })
 
       if (!response.ok) {
@@ -208,6 +263,10 @@ export default function ScanPage() {
       setSaving(false)
     }
   }
+
+  // Count items that will be removed (qty = 0 and selected)
+  const itemsToRemove = detectedItems.filter(i => i.selected && i.quantity === 0).length
+  const itemsToKeep = detectedItems.filter(i => i.selected && i.quantity > 0).length
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -361,10 +420,15 @@ export default function ScanPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600">
-                Found <span className="font-semibold text-emerald-600">{detectedItems.length}</span> items
+                Found <span className="font-semibold text-emerald-600">{detectedItems.filter(i => !i.notDetected).length}</span> items
+                {detectedItems.filter(i => i.notDetected).length > 0 && (
+                  <span className="text-amber-600 ml-1">
+                    ({detectedItems.filter(i => i.notDetected).length} not detected)
+                  </span>
+                )}
               </p>
               <p className="text-sm text-gray-400">
-                Click on an item to edit, or use the checkbox to select/deselect
+                Review and adjust quantities. Items at 0 will be removed.
               </p>
             </div>
             <button
@@ -378,13 +442,23 @@ export default function ScanPage() {
             </button>
           </div>
 
+          {/* Info banner about undetected items */}
+          {detectedItems.filter(i => i.notDetected).length > 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <strong>Items not detected</strong> are shown with qty=0 and will be removed from inventory.
+              Edit the quantity to keep them.
+            </div>
+          )}
+
           {/* Items list */}
           <div className="space-y-3">
             {detectedItems.map((item, index) => (
               <div
                 key={index}
                 className={`rounded-lg border-2 transition-colors overflow-hidden ${
-                  item.selected
+                  item.notDetected
+                    ? 'border-amber-300 bg-amber-50'
+                    : item.selected
                     ? 'border-emerald-500 bg-emerald-50'
                     : 'border-gray-200 bg-white'
                 }`}
@@ -397,7 +471,9 @@ export default function ScanPage() {
                       onClick={() => toggleItemSelection(index)}
                       className={`w-6 h-6 rounded-md border-2 flex items-center justify-center mt-0.5 flex-shrink-0 ${
                         item.selected
-                          ? 'bg-emerald-500 border-emerald-500 text-white'
+                          ? item.notDetected
+                            ? 'bg-amber-500 border-amber-500 text-white'
+                            : 'bg-emerald-500 border-emerald-500 text-white'
                           : 'border-gray-300 hover:border-emerald-400'
                       }`}
                     >
@@ -411,19 +487,28 @@ export default function ScanPage() {
                     {/* Item summary */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
+                          {item.notDetected && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
+                              Not detected
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              item.confidence >= 0.8
-                                ? 'bg-green-100 text-green-700'
-                                : item.confidence >= 0.6
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-red-100 text-red-700'
-                            }`}
-                          >
-                            {Math.round(item.confidence * 100)}%
-                          </span>
+                          {!item.notDetected && (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full ${
+                                item.confidence >= 0.8
+                                  ? 'bg-green-100 text-green-700'
+                                  : item.confidence >= 0.6
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {Math.round(item.confidence * 100)}%
+                            </span>
+                          )}
                           <button
                             onClick={() => setEditingIndex(editingIndex === index ? null : index)}
                             className="text-gray-400 hover:text-emerald-600"
@@ -444,8 +529,10 @@ export default function ScanPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">
-                          {item.quantity} {item.unit}
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          item.quantity === 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {item.quantity === 0 ? '0 (will remove)' : `${item.quantity} ${item.unit}`}
                         </span>
                         <span className="text-xs px-2 py-0.5 bg-blue-100 rounded text-blue-700">
                           {item.storage_category}
@@ -484,7 +571,9 @@ export default function ScanPage() {
                     {/* Quantity and Unit */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Quantity {item.notDetected && <span className="text-amber-600">(set &gt; 0 to keep)</span>}
+                        </label>
                         <input
                           type="number"
                           min="0"
@@ -580,50 +669,6 @@ export default function ScanPage() {
             </div>
           )}
 
-          {/* Merge mode selector */}
-          {detectedItems.length > 0 && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                If item already exists in inventory:
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setMergeMode('replace')}
-                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                    mergeMode === 'replace'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <span className="font-medium block">Replace</span>
-                  <span className="text-xs opacity-75">Update to new count</span>
-                </button>
-                <button
-                  onClick={() => setMergeMode('add')}
-                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                    mergeMode === 'add'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <span className="font-medium block">Add</span>
-                  <span className="text-xs opacity-75">Increase quantity</span>
-                </button>
-                <button
-                  onClick={() => setMergeMode('skip')}
-                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                    mergeMode === 'skip'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <span className="font-medium block">Skip</span>
-                  <span className="text-xs opacity-75">Keep existing</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Save button */}
           <div className="flex gap-4">
             <button
@@ -641,7 +686,11 @@ export default function ScanPage() {
               disabled={saving || detectedItems.filter(i => i.selected).length === 0}
               className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving...' : `Save ${detectedItems.filter(i => i.selected).length} items`}
+              {saving ? 'Saving...' : (
+                <>
+                  Save ({itemsToKeep} keep{itemsToRemove > 0 ? `, ${itemsToRemove} remove` : ''})
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -664,36 +713,48 @@ export default function ScanPage() {
           <div className="grid grid-cols-3 gap-4">
             <div className="p-4 bg-green-50 rounded-lg text-center">
               <div className="text-2xl font-bold text-green-700">{saveResult.inserted}</div>
-              <div className="text-sm text-green-600">New items</div>
+              <div className="text-sm text-green-600">Added</div>
             </div>
             <div className="p-4 bg-blue-50 rounded-lg text-center">
               <div className="text-2xl font-bold text-blue-700">{saveResult.updated}</div>
               <div className="text-sm text-blue-600">Updated</div>
             </div>
-            <div className="p-4 bg-gray-50 rounded-lg text-center">
-              <div className="text-2xl font-bold text-gray-700">{saveResult.skipped}</div>
-              <div className="text-sm text-gray-600">Skipped</div>
+            <div className="p-4 bg-red-50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-red-700">{saveResult.deleted}</div>
+              <div className="text-sm text-red-600">Removed</div>
             </div>
           </div>
 
-          {/* Merged items details */}
-          {saveResult.mergedItems.length > 0 && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-medium text-blue-800 mb-2">Updated Items:</h3>
-              <ul className="text-sm text-blue-700 space-y-1">
-                {saveResult.mergedItems.map((item, i) => (
+          {/* Inserted items details */}
+          {saveResult.insertedItems.length > 0 && (
+            <div className="p-4 bg-green-50 rounded-lg">
+              <h3 className="font-medium text-green-800 mb-2">Added:</h3>
+              <ul className="text-sm text-green-700 space-y-1">
+                {saveResult.insertedItems.map((item, i) => (
                   <li key={i}>{item}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {/* Skipped items details */}
-          {saveResult.skippedItems.length > 0 && (
-            <div className="p-4 bg-gray-100 rounded-lg">
-              <h3 className="font-medium text-gray-800 mb-2">Skipped (already in inventory):</h3>
-              <ul className="text-sm text-gray-600 space-y-1">
-                {saveResult.skippedItems.map((item, i) => (
+          {/* Updated items details */}
+          {saveResult.updatedItems.length > 0 && (
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <h3 className="font-medium text-blue-800 mb-2">Updated:</h3>
+              <ul className="text-sm text-blue-700 space-y-1">
+                {saveResult.updatedItems.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Deleted items details */}
+          {saveResult.deletedItems.length > 0 && (
+            <div className="p-4 bg-red-50 rounded-lg">
+              <h3 className="font-medium text-red-800 mb-2">Removed:</h3>
+              <ul className="text-sm text-red-700 space-y-1">
+                {saveResult.deletedItems.map((item, i) => (
                   <li key={i}>{item}</li>
                 ))}
               </ul>
