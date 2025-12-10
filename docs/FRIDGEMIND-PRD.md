@@ -136,16 +136,12 @@ Build a system that *sees, learns, and plans* your food lifecycle.
 5. Inventory is updated
 
 **Technical Requirements:**
-- Support multiple photos per session
+- Support multiple photos per scan session (fridge often requires 2-3 shots to capture all shelves)
 - Handle various lighting conditions
 - Detect items with 80%+ accuracy
-- Support common food categories:
-  - Fresh produce
-  - Dairy products
-  - Proteins (meat, fish, tofu)
-  - Condiments
-  - Beverages
-  - Packaged goods
+- **Dual categorization system:**
+  - **Storage category:** produce, dairy, protein, pantry, beverage, condiment, frozen
+  - **Nutritional type:** vegetables, protein, carbs, vitamins (mushrooms, supplements), fats, other
 
 **AI Output Structure:**
 ```json
@@ -153,12 +149,24 @@ Build a system that *sees, learns, and plans* your food lifecycle.
   "items": [
     {
       "name": "Milk",
-      "category": "dairy",
+      "storage_category": "dairy",
+      "nutritional_type": "protein",
       "location": "fridge",
       "quantity": 1,
       "unit": "gallon",
       "confidence": 0.92,
       "estimated_expiry": "2025-12-17",
+      "freshness": "fresh"
+    },
+    {
+      "name": "Shiitake Mushrooms",
+      "storage_category": "produce",
+      "nutritional_type": "vitamins",
+      "location": "fridge",
+      "quantity": 1,
+      "unit": "pack",
+      "confidence": 0.88,
+      "estimated_expiry": "2025-12-14",
       "freshness": "fresh"
     }
   ]
@@ -284,7 +292,8 @@ CREATE TABLE inventory_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  category TEXT NOT NULL, -- 'produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen'
+  storage_category TEXT NOT NULL, -- 'produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen'
+  nutritional_type TEXT, -- 'vegetables', 'protein', 'carbs', 'vitamins', 'fats', 'other'
   location TEXT NOT NULL, -- 'fridge', 'freezer', 'pantry'
   quantity DECIMAL(10,2) DEFAULT 1,
   unit TEXT, -- 'piece', 'lb', 'oz', 'gallon', 'bunch', etc.
