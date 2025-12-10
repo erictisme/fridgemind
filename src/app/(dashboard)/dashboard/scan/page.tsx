@@ -450,6 +450,23 @@ export default function ScanPage() {
             </div>
           )}
 
+          {/* Scanned Photos Reference */}
+          {images.length > 0 && (
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600 mb-2">Scanned photos ({images.length})</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {images.map((img, i) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt={`Photo ${i + 1}`}
+                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0 border border-gray-200"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Items list */}
           <div className="space-y-3">
             {detectedItems.map((item, index) => (
@@ -564,7 +581,7 @@ export default function ScanPage() {
                         type="text"
                         value={item.name}
                         onChange={(e) => updateItemField(index, 'name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                       />
                     </div>
 
@@ -580,7 +597,7 @@ export default function ScanPage() {
                           step="0.5"
                           value={item.quantity}
                           onChange={(e) => updateItemField(index, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         />
                       </div>
                       <div>
@@ -588,7 +605,7 @@ export default function ScanPage() {
                         <select
                           value={item.unit}
                           onChange={(e) => updateItemField(index, 'unit', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
                           {UNITS.map(u => (
                             <option key={u} value={u}>{u}</option>
@@ -604,7 +621,7 @@ export default function ScanPage() {
                         <select
                           value={item.storage_category}
                           onChange={(e) => updateItemField(index, 'storage_category', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
                           {STORAGE_CATEGORIES.map(c => (
                             <option key={c} value={c}>{c}</option>
@@ -616,7 +633,7 @@ export default function ScanPage() {
                         <select
                           value={item.nutritional_type}
                           onChange={(e) => updateItemField(index, 'nutritional_type', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
                           {NUTRITIONAL_TYPES.map(n => (
                             <option key={n} value={n}>{n}</option>
@@ -633,7 +650,7 @@ export default function ScanPage() {
                           type="date"
                           value={item.expiry_date}
                           onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         />
                       </div>
                       <div>
@@ -641,7 +658,7 @@ export default function ScanPage() {
                         <select
                           value={item.freshness}
                           onChange={(e) => updateItemField(index, 'freshness', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
                           {FRESHNESS_OPTIONS.map(f => (
                             <option key={f} value={f}>{f.replace('_', ' ')}</option>
