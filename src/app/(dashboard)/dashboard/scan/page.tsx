@@ -24,8 +24,19 @@ const NUTRITIONAL_TYPES = ['vegetables', 'protein', 'carbs', 'vitamins', 'fats',
 const UNITS = ['piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
 const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
 
+type MergeMode = 'replace' | 'add' | 'skip'
+
+interface SaveResult {
+  inserted: number
+  updated: number
+  skipped: number
+  mergedItems: string[]
+  skippedItems: string[]
+  message: string
+}
+
 export default function ScanPage() {
-  const [step, setStep] = useState<'location' | 'capture' | 'processing' | 'review'>('location')
+  const [step, setStep] = useState<'location' | 'capture' | 'processing' | 'review' | 'success'>('location')
   const [location, setLocation] = useState<Location>('fridge')
   const [images, setImages] = useState<string[]>([])
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([])
@@ -33,6 +44,8 @@ export default function ScanPage() {
   const [saving, setSaving] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [converting, setConverting] = useState(false)
+  const [mergeMode, setMergeMode] = useState<MergeMode>('replace')
+  const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
@@ -179,15 +192,16 @@ export default function ScanPage() {
       const response = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: selectedItems }),
+        body: JSON.stringify({ items: selectedItems, mergeMode }),
       })
 
       if (!response.ok) {
         throw new Error('Failed to save items')
       }
 
-      // Redirect to inventory page
-      router.push('/dashboard/inventory')
+      const result = await response.json()
+      setSaveResult(result)
+      setStep('success')
     } catch (err) {
       console.error('Save error:', err)
       setError('Failed to save items. Please try again.')
@@ -566,6 +580,50 @@ export default function ScanPage() {
             </div>
           )}
 
+          {/* Merge mode selector */}
+          {detectedItems.length > 0 && (
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                If item already exists in inventory:
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setMergeMode('replace')}
+                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
+                    mergeMode === 'replace'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="font-medium block">Replace</span>
+                  <span className="text-xs opacity-75">Update to new count</span>
+                </button>
+                <button
+                  onClick={() => setMergeMode('add')}
+                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
+                    mergeMode === 'add'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="font-medium block">Add</span>
+                  <span className="text-xs opacity-75">Increase quantity</span>
+                </button>
+                <button
+                  onClick={() => setMergeMode('skip')}
+                  className={`px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
+                    mergeMode === 'skip'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="font-medium block">Skip</span>
+                  <span className="text-xs opacity-75">Keep existing</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Save button */}
           <div className="flex gap-4">
             <button
@@ -584,6 +642,82 @@ export default function ScanPage() {
               className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Saving...' : `Save ${detectedItems.filter(i => i.selected).length} items`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 5: Success */}
+      {step === 'success' && saveResult && (
+        <div className="space-y-6">
+          <div className="text-center py-8">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900">Inventory Updated!</h2>
+            <p className="text-gray-600 mt-1">{saveResult.message}</p>
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 bg-green-50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-green-700">{saveResult.inserted}</div>
+              <div className="text-sm text-green-600">New items</div>
+            </div>
+            <div className="p-4 bg-blue-50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-blue-700">{saveResult.updated}</div>
+              <div className="text-sm text-blue-600">Updated</div>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg text-center">
+              <div className="text-2xl font-bold text-gray-700">{saveResult.skipped}</div>
+              <div className="text-sm text-gray-600">Skipped</div>
+            </div>
+          </div>
+
+          {/* Merged items details */}
+          {saveResult.mergedItems.length > 0 && (
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <h3 className="font-medium text-blue-800 mb-2">Updated Items:</h3>
+              <ul className="text-sm text-blue-700 space-y-1">
+                {saveResult.mergedItems.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Skipped items details */}
+          {saveResult.skippedItems.length > 0 && (
+            <div className="p-4 bg-gray-100 rounded-lg">
+              <h3 className="font-medium text-gray-800 mb-2">Skipped (already in inventory):</h3>
+              <ul className="text-sm text-gray-600 space-y-1">
+                {saveResult.skippedItems.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                setImages([])
+                setDetectedItems([])
+                setSaveResult(null)
+                setStep('location')
+              }}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              Scan More
+            </button>
+            <button
+              onClick={() => router.push('/dashboard/inventory')}
+              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              View Inventory
             </button>
           </div>
         </div>
