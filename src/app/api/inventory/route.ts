@@ -229,6 +229,79 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PUT - Update a single inventory item
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id, ...updates } = await request.json()
+
+    if (!id) {
+      return NextResponse.json({ error: 'Item ID required' }, { status: 400 })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('inventory_items')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', user.id) // Security: only update own items
+
+    if (error) {
+      console.error('Update error:', error)
+      return NextResponse.json({ error: 'Failed to update item' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, message: 'Item updated' })
+  } catch (error) {
+    console.error('Inventory update error:', error)
+    return NextResponse.json({ error: 'Failed to update item' }, { status: 500 })
+  }
+}
+
+// DELETE - Remove a single inventory item
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await request.json()
+
+    if (!id) {
+      return NextResponse.json({ error: 'Item ID required' }, { status: 400 })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('inventory_items')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id) // Security: only delete own items
+
+    if (error) {
+      console.error('Delete error:', error)
+      return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, message: 'Item deleted' })
+  } catch (error) {
+    console.error('Inventory delete error:', error)
+    return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
