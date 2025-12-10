@@ -25,13 +25,14 @@ const locationColors: Record<string, { bg: string; border: string }> = {
   pantry: { bg: 'bg-amber-50', border: 'border-amber-200' },
 }
 
-const nutritionalColors: Record<string, string> = {
-  vegetables: 'bg-green-500 text-white',
-  protein: 'bg-red-500 text-white',
-  carbs: 'bg-yellow-500 text-white',
-  vitamins: 'bg-purple-500 text-white',
-  fats: 'bg-orange-500 text-white',
-  other: 'bg-gray-500 text-white',
+// Food emojis for nutritional types
+const nutritionalEmojis: Record<string, string> = {
+  vegetables: '🥬',
+  protein: '🍖',
+  carbs: '🍞',
+  vitamins: '💊',
+  fats: '🧈',
+  other: '📦',
 }
 
 const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen'] as const
@@ -231,7 +232,7 @@ export default function InventoryPage() {
           {filteredItems.map(item => {
             const expiryStatus = getExpiryStatus(item.expiry_date)
             const locColor = locationColors[item.location] || { bg: 'bg-gray-50', border: 'border-gray-200' }
-            const nutritionColor = nutritionalColors[item.nutritional_type] || 'bg-gray-500 text-white'
+            const nutritionEmoji = nutritionalEmojis[item.nutritional_type] || '📦'
             const isExpanded = expandedId === item.id
 
             return (
@@ -247,18 +248,18 @@ export default function InventoryPage() {
                   className="p-4 cursor-pointer"
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{nutritionEmoji}</span>
+                      <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                    </div>
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${expiryStatus.color}`}>
                       {expiryStatus.label}
                     </span>
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    <span className="text-xs px-2 py-1 bg-white/70 rounded-lg text-gray-700 font-medium">
-                      {item.quantity} {item.unit}
-                    </span>
-                    <span className={`text-xs px-2 py-1 rounded-lg font-medium ${nutritionColor}`}>
-                      {item.nutritional_type}
+                    <span className="text-sm px-2 py-1 bg-white/70 rounded-lg text-gray-700 font-medium">
+                      {item.quantity} {item.quantity === 1 ? 'serving' : 'servings'}
                     </span>
                   </div>
 
@@ -289,28 +290,17 @@ export default function InventoryPage() {
                       />
                     </div>
 
-                    {/* Quantity + Unit row */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={editingItem.quantity}
-                          onChange={(e) => updateEditingItem('quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
-                        <input
-                          type="text"
-                          value={editingItem.unit}
-                          onChange={(e) => updateEditingItem('unit', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        />
-                      </div>
+                    {/* Quantity (servings) */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Servings</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={editingItem.quantity}
+                        onChange={(e) => updateEditingItem('quantity', parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                      />
                     </div>
 
                     {/* Category + Nutritional row */}
