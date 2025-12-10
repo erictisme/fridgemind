@@ -19,6 +19,11 @@ interface DetectedItem {
   selected: boolean
 }
 
+const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen']
+const NUTRITIONAL_TYPES = ['vegetables', 'protein', 'carbs', 'vitamins', 'fats', 'other']
+const UNITS = ['piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
+const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
+
 export default function ScanPage() {
   const [step, setStep] = useState<'location' | 'capture' | 'processing' | 'review'>('location')
   const [location, setLocation] = useState<Location>('fridge')
@@ -26,6 +31,8 @@ export default function ScanPage() {
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [converting, setConverting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
@@ -34,28 +41,65 @@ export default function ScanPage() {
     setStep('capture')
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Convert HEIC to JPEG using canvas
+  const convertToJpeg = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      // Check if it's a HEIC file
+      const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic')
+
+      if (isHeic) {
+        // For HEIC, we need to use heic2any library
+        import('heic2any').then(async (heic2any) => {
+          try {
+            const blob = await heic2any.default({
+              blob: file,
+              toType: 'image/jpeg',
+              quality: 0.8,
+            })
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(blob as Blob)
+          } catch (err) {
+            console.error('HEIC conversion failed:', err)
+            // Fallback: try to read as-is
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          }
+        })
+      } else {
+        // For other image types, read directly
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      }
+    })
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
 
-    const newImages: string[] = []
-    const readers: Promise<string>[] = []
+    setConverting(true)
+    setError(null)
 
-    Array.from(files).forEach(file => {
-      readers.push(
-        new Promise((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => {
-            resolve(reader.result as string)
-          }
-          reader.readAsDataURL(file)
-        })
-      )
-    })
-
-    Promise.all(readers).then(results => {
+    try {
+      const conversions = Array.from(files).map(file => convertToJpeg(file))
+      const results = await Promise.all(conversions)
       setImages(prev => [...prev, ...results])
-    })
+    } catch (err) {
+      console.error('File processing error:', err)
+      setError('Failed to process some images. Please try again.')
+    } finally {
+      setConverting(false)
+      // Reset the input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
   }
 
   const removeImage = (index: number) => {
@@ -113,6 +157,11 @@ export default function ScanPage() {
         i === index ? { ...item, [field]: value } : item
       )
     )
+  }
+
+  const deleteItem = (index: number) => {
+    setDetectedItems(prev => prev.filter((_, i) => i !== index))
+    setEditingIndex(null)
   }
 
   const handleSave = async () => {
@@ -208,15 +257,15 @@ export default function ScanPage() {
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-4">
               {images.map((img, index) => (
-                <div key={index} className="relative aspect-square">
+                <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
                   <img
                     src={img}
                     alt={`Photo ${index + 1}`}
-                    className="w-full h-full object-cover rounded-lg"
+                    className="w-full h-full object-cover"
                   />
                   <button
                     onClick={() => removeImage(index)}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm hover:bg-red-600"
+                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 flex items-center justify-center"
                   >
                     ×
                   </button>
@@ -225,10 +274,22 @@ export default function ScanPage() {
             </div>
           )}
 
+          {/* Converting indicator */}
+          {converting && (
+            <div className="text-center py-4">
+              <div className="w-6 h-6 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto"></div>
+              <p className="text-sm text-gray-500 mt-2">Processing images...</p>
+            </div>
+          )}
+
           {/* Add photo button */}
           <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-colors"
+            onClick={() => !converting && fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+              converting
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50'
+            }`}
           >
             <svg className="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -237,13 +298,13 @@ export default function ScanPage() {
             <p className="mt-2 text-gray-600">
               {images.length === 0 ? 'Click to add photos' : 'Add more photos'}
             </p>
-            <p className="text-sm text-gray-400">Take multiple shots to capture all items</p>
+            <p className="text-sm text-gray-400">Supports HEIC, JPG, PNG - Take multiple shots to capture all items</p>
           </div>
 
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             multiple
             onChange={handleFileSelect}
             className="hidden"
@@ -262,7 +323,7 @@ export default function ScanPage() {
             </button>
             <button
               onClick={handleAnalyze}
-              disabled={images.length === 0}
+              disabled={images.length === 0 || converting}
               className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Analyze {images.length > 0 && `(${images.length} photo${images.length > 1 ? 's' : ''})`}
@@ -289,7 +350,7 @@ export default function ScanPage() {
                 Found <span className="font-semibold text-emerald-600">{detectedItems.length}</span> items
               </p>
               <p className="text-sm text-gray-400">
-                Select items to add to your inventory
+                Click on an item to edit, or use the checkbox to select/deselect
               </p>
             </div>
             <button
@@ -308,80 +369,202 @@ export default function ScanPage() {
             {detectedItems.map((item, index) => (
               <div
                 key={index}
-                className={`p-4 rounded-lg border-2 transition-colors ${
+                className={`rounded-lg border-2 transition-colors overflow-hidden ${
                   item.selected
                     ? 'border-emerald-500 bg-emerald-50'
                     : 'border-gray-200 bg-white'
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  {/* Checkbox */}
-                  <button
-                    onClick={() => toggleItemSelection(index)}
-                    className={`w-6 h-6 rounded-md border-2 flex items-center justify-center mt-1 ${
-                      item.selected
-                        ? 'bg-emerald-500 border-emerald-500 text-white'
-                        : 'border-gray-300'
-                    }`}
-                  >
-                    {item.selected && (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
+                {/* Item header - always visible */}
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => toggleItemSelection(index)}
+                      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center mt-0.5 flex-shrink-0 ${
+                        item.selected
+                          ? 'bg-emerald-500 border-emerald-500 text-white'
+                          : 'border-gray-300 hover:border-emerald-400'
+                      }`}
+                    >
+                      {item.selected && (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
 
-                  {/* Item details */}
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between">
+                    {/* Item summary */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              item.confidence >= 0.8
+                                ? 'bg-green-100 text-green-700'
+                                : item.confidence >= 0.6
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {Math.round(item.confidence * 100)}%
+                          </span>
+                          <button
+                            onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+                            className="text-gray-400 hover:text-emerald-600"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteItem(index)}
+                            className="text-gray-400 hover:text-red-600"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">
+                          {item.quantity} {item.unit}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 rounded text-blue-700">
+                          {item.storage_category}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 rounded text-purple-700">
+                          {item.nutritional_type}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          item.freshness === 'fresh'
+                            ? 'bg-green-100 text-green-700'
+                            : item.freshness === 'use_soon'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {item.freshness.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded edit form */}
+                {editingIndex === index && (
+                  <div className="border-t border-gray-200 bg-white p-4 space-y-4">
+                    {/* Name */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
                       <input
                         type="text"
                         value={item.name}
                         onChange={(e) => updateItemField(index, 'name', e.target.value)}
-                        className="font-medium text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-emerald-500 focus:outline-none"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                       />
-                      <span
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          item.confidence >= 0.8
-                            ? 'bg-green-100 text-green-700'
-                            : item.confidence >= 0.6
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}
-                      >
-                        {Math.round(item.confidence * 100)}% confident
-                      </span>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 text-sm">
-                      <span className="px-2 py-1 bg-gray-100 rounded text-gray-600">
-                        {item.quantity} {item.unit}
-                      </span>
-                      <span className="px-2 py-1 bg-blue-100 rounded text-blue-700">
-                        {item.storage_category}
-                      </span>
-                      <span className="px-2 py-1 bg-purple-100 rounded text-purple-700">
-                        {item.nutritional_type}
-                      </span>
-                      <span className={`px-2 py-1 rounded ${
-                        item.freshness === 'fresh'
-                          ? 'bg-green-100 text-green-700'
-                          : item.freshness === 'use_soon'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {item.freshness.replace('_', ' ')}
-                      </span>
+                    {/* Quantity and Unit */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={item.quantity}
+                          onChange={(e) => updateItemField(index, 'quantity', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Unit</label>
+                        <select
+                          value={item.unit}
+                          onChange={(e) => updateItemField(index, 'unit', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {UNITS.map(u => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
-                    <p className="text-sm text-gray-500">
-                      Expires: {new Date(item.expiry_date).toLocaleDateString()}
-                    </p>
+                    {/* Storage Category and Nutritional Type */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Storage Category</label>
+                        <select
+                          value={item.storage_category}
+                          onChange={(e) => updateItemField(index, 'storage_category', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {STORAGE_CATEGORIES.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Nutritional Type</label>
+                        <select
+                          value={item.nutritional_type}
+                          onChange={(e) => updateItemField(index, 'nutritional_type', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {NUTRITIONAL_TYPES.map(n => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Expiry Date and Freshness */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Expiry Date</label>
+                        <input
+                          type="date"
+                          value={item.expiry_date}
+                          onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Freshness</label>
+                        <select
+                          value={item.freshness}
+                          onChange={(e) => updateItemField(index, 'freshness', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {FRESHNESS_OPTIONS.map(f => (
+                            <option key={f} value={f}>{f.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Done editing button */}
+                    <button
+                      onClick={() => setEditingIndex(null)}
+                      className="w-full px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                    >
+                      Done Editing
+                    </button>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
+
+          {detectedItems.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <p>No items detected. Try scanning again with better lighting.</p>
+            </div>
+          )}
 
           {/* Save button */}
           <div className="flex gap-4">
