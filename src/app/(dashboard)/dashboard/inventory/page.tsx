@@ -47,6 +47,7 @@ export default function InventoryPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [saving, setSaving] = useState(false)
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
 
   useEffect(() => {
     fetchInventory()
@@ -101,27 +102,33 @@ export default function InventoryPage() {
     }
   }
 
-  const handleDelete = async () => {
+  const handleRemove = async (reason: 'consumed' | 'wasted') => {
     if (!editingItem) return
-    if (!confirm(`Delete "${editingItem.name}" from inventory?`)) return
 
     setSaving(true)
+    setShowRemoveDialog(false)
 
     try {
       const response = await fetch('/api/inventory', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingItem.id }),
+        body: JSON.stringify({
+          id: editingItem.id,
+          reason,
+          itemName: editingItem.name,
+          category: editingItem.storage_category,
+          quantity: editingItem.quantity,
+        }),
       })
 
-      if (!response.ok) throw new Error('Failed to delete')
+      if (!response.ok) throw new Error('Failed to remove')
 
       // Update local state
       setItems(prev => prev.filter(item => item.id !== editingItem.id))
       setExpandedId(null)
       setEditingItem(null)
     } catch {
-      setError('Failed to delete item')
+      setError('Failed to remove item')
     } finally {
       setSaving(false)
     }
@@ -366,19 +373,42 @@ export default function InventoryPage() {
                         {saving ? 'Saving...' : 'Save'}
                       </button>
                       <button
-                        onClick={handleDelete}
+                        onClick={() => setShowRemoveDialog(true)}
                         disabled={saving}
                         className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
                       >
-                        Delete
+                        Remove
                       </button>
                       <button
-                        onClick={() => { setExpandedId(null); setEditingItem(null) }}
+                        onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
                         className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300"
                       >
                         Cancel
                       </button>
                     </div>
+
+                    {/* Remove dialog */}
+                    {showRemoveDialog && (
+                      <div className="mt-3 p-3 bg-gray-100 rounded-lg">
+                        <p className="text-sm text-gray-700 mb-3">Why are you removing this item?</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleRemove('consumed')}
+                            disabled={saving}
+                            className="flex-1 px-3 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50"
+                          >
+                            😋 Ate it
+                          </button>
+                          <button
+                            onClick={() => handleRemove('wasted')}
+                            disabled={saving}
+                            className="flex-1 px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
+                          >
+                            🗑️ Went bad
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

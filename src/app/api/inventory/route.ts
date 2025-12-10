@@ -267,7 +267,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - Remove a single inventory item
+// DELETE - Remove a single inventory item and log consumption
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -277,12 +277,28 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await request.json()
+    const { id, reason = 'consumed', itemName, category, quantity } = await request.json()
 
     if (!id) {
       return NextResponse.json({ error: 'Item ID required' }, { status: 400 })
     }
 
+    // Log to consumption_logs for tracking (consumed vs wasted)
+    if (itemName && category) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('consumption_logs')
+        .insert({
+          user_id: user.id,
+          item_name: itemName,
+          category: category,
+          quantity_consumed: quantity || 1,
+          reason: reason, // 'consumed' or 'wasted'
+          consumed_at: new Date().toISOString(),
+        })
+    }
+
+    // Delete the inventory item
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any)
       .from('inventory_items')
@@ -295,7 +311,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, message: 'Item deleted' })
+    return NextResponse.json({ success: true, message: 'Item removed', reason })
   } catch (error) {
     console.error('Inventory delete error:', error)
     return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
