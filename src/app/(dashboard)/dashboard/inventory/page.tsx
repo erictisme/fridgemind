@@ -25,18 +25,21 @@ const locationColors: Record<string, { bg: string; border: string }> = {
   pantry: { bg: 'bg-amber-50', border: 'border-amber-200' },
 }
 
-// Food emojis for nutritional types
+// Food emojis for nutritional types (with backward compatibility)
 const nutritionalEmojis: Record<string, string> = {
-  vegetables: '🥬',
   protein: '🍖',
   carbs: '🍞',
-  vitamins: '💊',
-  fats: '🧈',
+  fibre: '🥬',
+  misc: '📦',
+  // Legacy mappings for existing data
+  vegetables: '🥬',
+  vitamins: '🥬',
+  fats: '📦',
   other: '📦',
 }
 
 const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen'] as const
-const NUTRITIONAL_TYPES = ['vegetables', 'protein', 'carbs', 'vitamins', 'fats', 'other'] as const
+const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
 const FRESHNESS_LEVELS = ['fresh', 'good', 'use_soon', 'expiring'] as const
 
 export default function InventoryPage() {
