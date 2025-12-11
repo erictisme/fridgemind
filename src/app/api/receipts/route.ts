@@ -26,6 +26,36 @@ export async function POST(request: NextRequest) {
       parsedReceipt = await parseReceiptImage(file_data)
     }
 
+    // Check for duplicate receipt (same store, date, total, and optionally receipt number)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let duplicateQuery = (supabase as any)
+      .from('receipts')
+      .select('id, store_name, receipt_date, total')
+      .eq('user_id', user.id)
+      .eq('store_name', parsedReceipt.store_name)
+      .eq('receipt_date', parsedReceipt.receipt_date)
+      .eq('total', parsedReceipt.total)
+
+    // If we have a receipt number, also match on that
+    if (parsedReceipt.receipt_number) {
+      duplicateQuery = duplicateQuery.eq('receipt_number', parsedReceipt.receipt_number)
+    }
+
+    const { data: existingReceipts } = await duplicateQuery
+
+    if (existingReceipts && existingReceipts.length > 0) {
+      return NextResponse.json({
+        success: false,
+        duplicate: true,
+        error: 'Duplicate receipt - already uploaded',
+        existing: {
+          store: parsedReceipt.store_name,
+          date: parsedReceipt.receipt_date,
+          total: parsedReceipt.total,
+        },
+      }, { status: 409 })
+    }
+
     // Save receipt to database
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: receipt, error: receiptError } = await (supabase as any)

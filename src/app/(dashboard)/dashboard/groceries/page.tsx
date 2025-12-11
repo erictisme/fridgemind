@@ -95,17 +95,23 @@ export default function GroceriesPage() {
           }),
         })
 
+        const data = await res.json()
+
         if (res.ok) {
-          const data = await res.json()
           setUploadProgress((prev) => [
             ...prev.slice(0, -1),
             `✓ ${file.name}: $${data.parsed.total.toFixed(2)} - ${data.items_count} items`,
           ])
-        } else {
-          const error = await res.json()
+        } else if (data.duplicate) {
+          // Handle duplicate receipt
           setUploadProgress((prev) => [
             ...prev.slice(0, -1),
-            `✗ ${file.name}: ${error.error || 'Failed to process'}`,
+            `⚠ ${file.name}: Duplicate - already have ${data.existing.store} receipt from ${data.existing.date} for $${data.existing.total.toFixed(2)}`,
+          ])
+        } else {
+          setUploadProgress((prev) => [
+            ...prev.slice(0, -1),
+            `✗ ${file.name}: ${data.error || 'Failed to process'}`,
           ])
         }
       } catch (error) {
@@ -250,6 +256,8 @@ export default function GroceriesPage() {
                     className={`text-sm ${
                       msg.startsWith('✓')
                         ? 'text-emerald-600'
+                        : msg.startsWith('⚠')
+                        ? 'text-amber-600'
                         : msg.startsWith('✗')
                         ? 'text-red-600'
                         : 'text-gray-600'
