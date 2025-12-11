@@ -1,0 +1,199 @@
+import { GoogleGenerativeAI } from '@google/generative-ai'
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
+
+export interface ReceiptItem {
+  name: string
+  item_code?: string
+  quantity: number
+  unit: string
+  unit_price?: number
+  total_price: number
+  discount?: number
+  category: string
+}
+
+export interface ParsedReceipt {
+  store_name: string
+  store_branch?: string
+  receipt_date: string // ISO date string
+  receipt_number?: string
+  subtotal?: number
+  gst?: number
+  total: number
+  payment_method?: string
+  items: ReceiptItem[]
+}
+
+const RECEIPT_PARSER_PROMPT = `You are a receipt parser specializing in Singapore supermarket receipts, especially FairPrice (NTUC FairPrice).
+
+Analyze the provided receipt image/PDF and extract all information.
+
+IMPORTANT FOR FAIRPRICE RECEIPTS:
+- Store name is usually "NTUC FAIRPRICE" or similar
+- Branch location appears near the top
+- Receipt number may be labeled as "TRANS#" or similar
+- Items show: description, quantity (if > 1), unit price, total
+- GST (7% or 9%) is shown separately
+- Payment method: NETS, VISA, MASTERCARD, CASH, etc.
+- LinkPoints or FairPrice app discounts may appear
+
+For each item, categorize it:
+- produce: fruits, vegetables, salads
+- dairy: milk, cheese, yogurt, butter, cream
+- protein: meat, chicken, fish, seafood, eggs, tofu
+- pantry: rice, pasta, canned goods, sauces, spices, oil
+- beverage: water, juice, soda, coffee, tea
+- frozen: frozen foods, ice cream
+- household: cleaning, paper products, toiletries
+- snacks: chips, cookies, chocolate, candy
+- bakery: bread, pastries
+- other: anything else
+
+Output format: Return ONLY a valid JSON object:
+{
+  "store_name": "string",
+  "store_branch": "string or null",
+  "receipt_date": "YYYY-MM-DD",
+  "receipt_number": "string or null",
+  "subtotal": number or null,
+  "gst": number or null,
+  "total": number,
+  "payment_method": "string or null",
+  "items": [
+    {
+      "name": "string (clean product name)",
+      "item_code": "string or null",
+      "quantity": number,
+      "unit": "string (pc, kg, pack, bottle, etc)",
+      "unit_price": number or null,
+      "total_price": number,
+      "discount": number or null,
+      "category": "string"
+    }
+  ]
+}
+
+GUIDELINES:
+- Clean up item names (remove codes, make readable)
+- Convert all prices to numbers (no $ symbols)
+- If quantity is not specified, assume 1
+- If unit is not clear, use "pc" (piece)
+- Date format must be YYYY-MM-DD
+- If you can't determine a value, use null
+- Do not include any text before or after the JSON`
+
+export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  // Remove data URL prefix if present
+  const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '')
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: base64Data,
+      },
+    },
+    RECEIPT_PARSER_PROMPT,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    // Validate required fields
+    if (!parsed.total || !parsed.items) {
+      throw new Error('Missing required fields: total or items')
+    }
+
+    return {
+      store_name: parsed.store_name || 'Unknown Store',
+      store_branch: parsed.store_branch || null,
+      receipt_date: parsed.receipt_date || new Date().toISOString().split('T')[0],
+      receipt_number: parsed.receipt_number || null,
+      subtotal: parsed.subtotal || null,
+      gst: parsed.gst || null,
+      total: parsed.total,
+      payment_method: parsed.payment_method || null,
+      items: parsed.items.map((item: ReceiptItem) => ({
+        name: item.name,
+        item_code: item.item_code || null,
+        quantity: item.quantity || 1,
+        unit: item.unit || 'pc',
+        unit_price: item.unit_price || null,
+        total_price: item.total_price,
+        discount: item.discount || 0,
+        category: item.category || 'other',
+      })),
+    }
+  } catch (error) {
+    console.error('Failed to parse Gemini receipt response:', text)
+    throw new Error(`Failed to parse receipt: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+export async function parseReceiptImage(imageBase64: string): Promise<ParsedReceipt> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  // Remove data URL prefix if present
+  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: base64Data,
+      },
+    },
+    RECEIPT_PARSER_PROMPT,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    if (!parsed.total || !parsed.items) {
+      throw new Error('Missing required fields: total or items')
+    }
+
+    return {
+      store_name: parsed.store_name || 'Unknown Store',
+      store_branch: parsed.store_branch || null,
+      receipt_date: parsed.receipt_date || new Date().toISOString().split('T')[0],
+      receipt_number: parsed.receipt_number || null,
+      subtotal: parsed.subtotal || null,
+      gst: parsed.gst || null,
+      total: parsed.total,
+      payment_method: parsed.payment_method || null,
+      items: parsed.items.map((item: ReceiptItem) => ({
+        name: item.name,
+        item_code: item.item_code || null,
+        quantity: item.quantity || 1,
+        unit: item.unit || 'pc',
+        unit_price: item.unit_price || null,
+        total_price: item.total_price,
+        discount: item.discount || 0,
+        category: item.category || 'other',
+      })),
+    }
+  } catch (error) {
+    console.error('Failed to parse Gemini receipt response:', text)
+    throw new Error(`Failed to parse receipt: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
