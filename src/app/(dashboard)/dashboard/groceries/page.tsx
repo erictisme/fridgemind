@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 interface Receipt {
   id: string
@@ -38,7 +37,6 @@ export default function GroceriesPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<'dashboard' | 'receipts' | 'upload'>('dashboard')
-  const supabase = createClientComponentClient()
 
   const fetchData = useCallback(async () => {
     setLoading(true)
