@@ -34,10 +34,8 @@ interface ExistingInventoryItem {
   location: string
 }
 
-const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen']
 const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc']
-const UNITS = ['piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
-const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
+const UNITS = ['serving', 'piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
 
 interface SaveResult {
   inserted: number
@@ -586,20 +584,8 @@ export default function ScanPage() {
                         }`}>
                           {item.quantity === 0 ? '0 (will remove)' : `${item.quantity} ${item.unit}`}
                         </span>
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 rounded text-blue-700">
-                          {item.storage_category}
-                        </span>
                         <span className="text-xs px-2 py-0.5 bg-purple-100 rounded text-purple-700">
                           {item.nutritional_type}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          item.freshness === 'fresh'
-                            ? 'bg-green-100 text-green-700'
-                            : item.freshness === 'use_soon'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {item.freshness.replace('_', ' ')}
                         </span>
                       </div>
                     </div>
@@ -650,56 +636,28 @@ export default function ScanPage() {
                     </div>
 
                     {/* Storage Category and Nutritional Type */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Storage Category</label>
-                        <select
-                          value={item.storage_category}
-                          onChange={(e) => updateItemField(index, 'storage_category', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        >
-                          {STORAGE_CATEGORIES.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Nutritional Type</label>
-                        <select
-                          value={item.nutritional_type}
-                          onChange={(e) => updateItemField(index, 'nutritional_type', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        >
-                          {NUTRITIONAL_TYPES.map(n => (
-                            <option key={n} value={n}>{n}</option>
-                          ))}
-                        </select>
-                      </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+                      <select
+                        value={item.nutritional_type}
+                        onChange={(e) => updateItemField(index, 'nutritional_type', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      >
+                        {NUTRITIONAL_TYPES.map(n => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
                     </div>
 
-                    {/* Expiry Date and Freshness */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Expiry Date</label>
-                        <input
-                          type="date"
-                          value={item.expiry_date}
-                          onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Freshness</label>
-                        <select
-                          value={item.freshness}
-                          onChange={(e) => updateItemField(index, 'freshness', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        >
-                          {FRESHNESS_OPTIONS.map(f => (
-                            <option key={f} value={f}>{f.replace('_', ' ')}</option>
-                          ))}
-                        </select>
-                      </div>
+                    {/* Expiry Date */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Expiry Date</label>
+                      <input
+                        type="date"
+                        value={item.expiry_date}
+                        onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      />
                     </div>
 
                     {/* Done editing button */}
