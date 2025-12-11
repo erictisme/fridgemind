@@ -69,23 +69,23 @@ const getFreshnessStatus = (expiryDate: string) => {
 
   if (daysUntil <= 0) return {
     label: 'Expired',
-    color: 'bg-red-500 text-white',
-    cardBorder: 'border-red-400',
-    cardBg: 'bg-red-50',
+    color: 'bg-gray-800 text-white',
+    cardBorder: 'border-gray-600',
+    cardBg: 'bg-gray-100',
     days: daysUntil
   }
   if (daysUntil <= 2) return {
     label: `${daysUntil}d`,
-    color: 'bg-orange-500 text-white',
-    cardBorder: 'border-orange-300',
-    cardBg: 'bg-orange-50',
+    color: 'bg-red-600 text-white',
+    cardBorder: 'border-red-400',
+    cardBg: 'bg-red-50',
     days: daysUntil
   }
   if (daysUntil <= 5) return {
     label: `${daysUntil}d`,
-    color: 'bg-amber-400 text-white',
-    cardBorder: 'border-amber-300',
-    cardBg: 'bg-amber-50',
+    color: 'bg-orange-500 text-white',
+    cardBorder: 'border-orange-300',
+    cardBg: 'bg-orange-50',
     days: daysUntil
   }
   return {
@@ -328,18 +328,18 @@ export default function InventoryPage() {
           <div className="flex gap-3 text-xs">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-              Fresh (5+ days)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-amber-400"></span>
-              Use soon (3-5d)
+              Fresh (5+d)
             </span>
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-orange-500"></span>
-              Use now (1-2d)
+              Use soon (3-5d)
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-red-500"></span>
+              <span className="w-3 h-3 rounded-full bg-red-600"></span>
+              Expiring (1-2d)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-gray-800"></span>
               Expired
             </span>
           </div>
