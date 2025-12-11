@@ -300,14 +300,12 @@ export const STORAGE_CATEGORIES = [
 
 export type StorageCategory = typeof STORAGE_CATEGORIES[number]
 
-// Nutritional type options
+// Nutritional type options (simplified)
 export const NUTRITIONAL_TYPES = [
-  'vegetables',
   'protein',
   'carbs',
-  'vitamins',
-  'fats',
-  'other',
+  'fibre',
+  'misc',
 ] as const
 
 export type NutritionalType = typeof NUTRITIONAL_TYPES[number]

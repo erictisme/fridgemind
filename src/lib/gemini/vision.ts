@@ -27,7 +27,7 @@ const VISION_PROMPT = `You are a food inventory assistant. Analyze the provided 
 For each item you can clearly identify, provide:
 1. name: Be specific (e.g., "2% milk" not just "milk", "cheddar cheese" not just "cheese")
 2. storage_category: One of: produce, dairy, protein, pantry, beverage, condiment, frozen
-3. nutritional_type: One of: vegetables, protein, carbs, vitamins, fats, other
+3. nutritional_type: One of: protein, carbs, fibre, misc (use fibre for vegetables/fruits, misc for everything else)
 4. quantity: Estimated number/amount (use 1 if unsure)
 5. unit: One of: piece, pack, bottle, carton, lb, oz, gallon, bunch, bag, container, can, jar
 6. estimated_expiry_days: Days until typical expiry based on the item type (use typical shelf life)

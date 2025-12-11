@@ -35,7 +35,7 @@ interface ExistingInventoryItem {
 }
 
 const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage', 'condiment', 'frozen']
-const NUTRITIONAL_TYPES = ['vegetables', 'protein', 'carbs', 'vitamins', 'fats', 'other']
+const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc']
 const UNITS = ['piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
 const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
 
