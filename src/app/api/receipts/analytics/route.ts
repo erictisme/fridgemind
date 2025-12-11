@@ -1,17 +1,12 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -22,10 +17,11 @@ export async function GET(request: Request) {
     const startDate = new Date()
     startDate.setMonth(startDate.getMonth() - months)
 
-    const { data: receipts, error: receiptsError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: receipts, error: receiptsError } = await (supabase as any)
       .from('receipts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .gte('receipt_date', startDate.toISOString().split('T')[0])
       .order('receipt_date', { ascending: true })
 
@@ -35,11 +31,11 @@ export async function GET(request: Request) {
     }
 
     // Get all receipt items for the period
-    const { data: items, error: itemsError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: items, error: itemsError } = await (supabase as any)
       .from('receipt_items')
-      .select('*, receipts!inner(receipt_date)')
-      .eq('user_id', session.user.id)
-      .gte('receipts.receipt_date', startDate.toISOString().split('T')[0])
+      .select('*')
+      .eq('user_id', user.id)
 
     if (itemsError) {
       console.error('Error fetching items:', itemsError)
@@ -47,21 +43,21 @@ export async function GET(request: Request) {
 
     // Calculate monthly spending
     const monthlySpending: Record<string, number> = {}
-    receipts?.forEach((r) => {
+    receipts?.forEach((r: { receipt_date: string; total: number }) => {
       const month = r.receipt_date.substring(0, 7) // YYYY-MM
       monthlySpending[month] = (monthlySpending[month] || 0) + (r.total || 0)
     })
 
     // Calculate category breakdown
     const categorySpending: Record<string, number> = {}
-    items?.forEach((item) => {
+    items?.forEach((item: { category: string; total_price: number }) => {
       const category = item.category || 'other'
       categorySpending[category] = (categorySpending[category] || 0) + (item.total_price || 0)
     })
 
     // Calculate store breakdown
     const storeSpending: Record<string, { total: number; count: number }> = {}
-    receipts?.forEach((r) => {
+    receipts?.forEach((r: { store_name: string; total: number }) => {
       const store = r.store_name || 'Unknown'
       if (!storeSpending[store]) {
         storeSpending[store] = { total: 0, count: 0 }
@@ -72,7 +68,7 @@ export async function GET(request: Request) {
 
     // Top items by spend
     const itemSpending: Record<string, { total: number; count: number }> = {}
-    items?.forEach((item) => {
+    items?.forEach((item: { item_name: string; total_price: number; quantity: number }) => {
       const name = item.item_name
       if (!itemSpending[name]) {
         itemSpending[name] = { total: 0, count: 0 }
@@ -98,7 +94,7 @@ export async function GET(request: Request) {
       : 0
 
     // Total statistics
-    const totalSpent = receipts?.reduce((acc, r) => acc + (r.total || 0), 0) || 0
+    const totalSpent = receipts?.reduce((acc: number, r: { total: number }) => acc + (r.total || 0), 0) || 0
     const receiptCount = receipts?.length || 0
     const avgPerTrip = receiptCount > 0 ? totalSpent / receiptCount : 0
     const itemCount = items?.length || 0

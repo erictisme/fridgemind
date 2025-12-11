@@ -1,18 +1,13 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { parseReceiptPDF, parseReceiptImage } from '@/lib/gemini/receipt-parser'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -32,10 +27,11 @@ export async function POST(request: Request) {
     }
 
     // Save receipt to database
-    const { data: receipt, error: receiptError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: receipt, error: receiptError } = await (supabase as any)
       .from('receipts')
       .insert({
-        user_id: session.user.id,
+        user_id: user.id,
         store_name: parsedReceipt.store_name,
         store_branch: parsedReceipt.store_branch,
         receipt_date: parsedReceipt.receipt_date,
@@ -58,7 +54,7 @@ export async function POST(request: Request) {
     // Save receipt items
     const receiptItems = parsedReceipt.items.map((item) => ({
       receipt_id: receipt.id,
-      user_id: session.user.id,
+      user_id: user.id,
       item_name: item.name,
       item_code: item.item_code,
       quantity: item.quantity,
@@ -69,7 +65,8 @@ export async function POST(request: Request) {
       category: item.category,
     }))
 
-    const { error: itemsError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: itemsError } = await (supabase as any)
       .from('receipt_items')
       .insert(receiptItems)
 
@@ -93,16 +90,12 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -110,11 +103,12 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Get receipts with item counts
-    const { data: receipts, error } = await supabase
+    // Get receipts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: receipts, error } = await (supabase as any)
       .from('receipts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .order('receipt_date', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -124,20 +118,21 @@ export async function GET(request: Request) {
     }
 
     // Get spending summary
-    const { data: summary } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: summary } = await (supabase as any)
       .from('receipts')
       .select('total, receipt_date')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
 
-    const totalSpent = summary?.reduce((acc, r) => acc + (r.total || 0), 0) || 0
+    const totalSpent = summary?.reduce((acc: number, r: { total: number }) => acc + (r.total || 0), 0) || 0
     const receiptCount = summary?.length || 0
 
     // Get current month spending
     const now = new Date()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
     const thisMonthSpent = summary
-      ?.filter((r) => r.receipt_date >= monthStart)
-      .reduce((acc, r) => acc + (r.total || 0), 0) || 0
+      ?.filter((r: { receipt_date: string }) => r.receipt_date >= monthStart)
+      .reduce((acc: number, r: { total: number }) => acc + (r.total || 0), 0) || 0
 
     return NextResponse.json({
       receipts,
@@ -154,16 +149,12 @@ export async function GET(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -174,11 +165,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Receipt ID required' }, { status: 400 })
     }
 
-    const { error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
       .from('receipts')
       .delete()
       .eq('id', receiptId)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
 
     if (error) {
       console.error('Error deleting receipt:', error)
