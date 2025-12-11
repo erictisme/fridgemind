@@ -42,6 +42,21 @@ const STORAGE_CATEGORIES = ['produce', 'dairy', 'protein', 'pantry', 'beverage',
 const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
 const FRESHNESS_LEVELS = ['fresh', 'good', 'use_soon', 'expiring'] as const
 
+const LOCATIONS = ['fridge', 'freezer', 'pantry'] as const
+
+// Default values for new item
+const getDefaultNewItem = () => ({
+  name: '',
+  storage_category: 'produce' as string,
+  nutritional_type: 'fibre' as string,
+  location: 'fridge' as string,
+  quantity: 1,
+  unit: 'piece',
+  expiry_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  freshness: 'fresh',
+  confidence: 1,
+})
+
 export default function InventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,6 +66,8 @@ export default function InventoryPage() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [saving, setSaving] = useState(false)
   const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newItem, setNewItem] = useState(getDefaultNewItem())
 
   useEffect(() => {
     fetchInventory()
@@ -105,7 +122,39 @@ export default function InventoryPage() {
     }
   }
 
-  const handleRemove = async (reason: 'consumed' | 'wasted') => {
+  const handleAddItem = async () => {
+    if (!newItem.name.trim()) {
+      setError('Please enter an item name')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [newItem],
+          location: newItem.location,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to add item')
+
+      // Refresh inventory
+      await fetchInventory()
+      setShowAddForm(false)
+      setNewItem(getDefaultNewItem())
+    } catch {
+      setError('Failed to add item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleRemove = async (reason: 'consumed' | 'wasted' | 'wrong_entry') => {
     if (!editingItem) return
 
     setSaving(true)
@@ -181,16 +230,137 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
           <p className="text-gray-500">{items.length} items tracked</p>
         </div>
-        <Link
-          href="/dashboard/scan"
-          className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-        >
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Scan More
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+          >
+            + Add Item
+          </button>
+          <Link
+            href="/dashboard/scan"
+            className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            </svg>
+            Scan
+          </Link>
+        </div>
       </div>
+
+      {/* Add Item Form */}
+      {showAddForm && (
+        <div className="bg-white rounded-lg border-2 border-emerald-200 p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Add New Item</h2>
+            <button
+              onClick={() => { setShowAddForm(false); setNewItem(getDefaultNewItem()) }}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Name */}
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+              <input
+                type="text"
+                value={newItem.name}
+                onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                placeholder="e.g., Milk, Chicken breast, Apples"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <select
+                value={newItem.location}
+                onChange={(e) => setNewItem({ ...newItem, location: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+              >
+                {LOCATIONS.map(loc => (
+                  <option key={loc} value={loc}>{loc.charAt(0).toUpperCase() + loc.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Servings</label>
+              <input
+                type="number"
+                min="1"
+                value={newItem.quantity}
+                onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+              />
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <select
+                value={newItem.storage_category}
+                onChange={(e) => setNewItem({ ...newItem, storage_category: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+              >
+                {STORAGE_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Nutritional Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select
+                value={newItem.nutritional_type}
+                onChange={(e) => setNewItem({ ...newItem, nutritional_type: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+              >
+                {NUTRITIONAL_TYPES.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Expiry Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+              <input
+                type="date"
+                value={newItem.expiry_date}
+                onChange={(e) => setNewItem({ ...newItem, expiry_date: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Add button */}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={handleAddItem}
+              disabled={saving || !newItem.name.trim()}
+              className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {saving ? 'Adding...' : 'Add Item'}
+            </button>
+            <button
+              onClick={() => { setShowAddForm(false); setNewItem(getDefaultNewItem()) }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 bg-red-50 text-red-700 rounded-lg flex justify-between items-center">
@@ -394,20 +564,27 @@ export default function InventoryPage() {
                     {showRemoveDialog && (
                       <div className="mt-3 p-3 bg-gray-100 rounded-lg">
                         <p className="text-sm text-gray-700 mb-3">Why are you removing this item?</p>
-                        <div className="flex gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           <button
                             onClick={() => handleRemove('consumed')}
                             disabled={saving}
-                            className="flex-1 px-3 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50"
+                            className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50"
                           >
-                            😋 Ate it
+                            Ate it
                           </button>
                           <button
                             onClick={() => handleRemove('wasted')}
                             disabled={saving}
-                            className="flex-1 px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
+                            className="px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50"
                           >
-                            🗑️ Went bad
+                            Went bad
+                          </button>
+                          <button
+                            onClick={() => handleRemove('wrong_entry')}
+                            disabled={saving}
+                            className="px-3 py-2 bg-gray-500 text-white rounded-lg text-sm font-medium hover:bg-gray-600 disabled:opacity-50"
+                          >
+                            Wrong entry
                           </button>
                         </div>
                       </div>

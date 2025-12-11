@@ -192,11 +192,9 @@ export default function MealPlanPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => updateField('breakfasts_home', Math.max(0, mealPlan.breakfasts_home - 1))}
-                className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                </svg>
+                -
               </button>
               <input
                 type="number"
@@ -208,11 +206,9 @@ export default function MealPlanPage() {
               />
               <button
                 onClick={() => updateField('breakfasts_home', Math.min(7, mealPlan.breakfasts_home + 1))}
-                className="w-10 h-10 flex items-center justify-center bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                +
               </button>
             </div>
           </div>
@@ -225,11 +221,9 @@ export default function MealPlanPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => updateField('lunches_home', Math.max(0, mealPlan.lunches_home - 1))}
-                className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                </svg>
+                -
               </button>
               <input
                 type="number"
@@ -241,11 +235,9 @@ export default function MealPlanPage() {
               />
               <button
                 onClick={() => updateField('lunches_home', Math.min(7, mealPlan.lunches_home + 1))}
-                className="w-10 h-10 flex items-center justify-center bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                +
               </button>
             </div>
           </div>
@@ -258,11 +250,9 @@ export default function MealPlanPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => updateField('dinners_home', Math.max(0, mealPlan.dinners_home - 1))}
-                className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                </svg>
+                -
               </button>
               <input
                 type="number"
@@ -274,11 +264,9 @@ export default function MealPlanPage() {
               />
               <button
                 onClick={() => updateField('dinners_home', Math.min(7, mealPlan.dinners_home + 1))}
-                className="w-10 h-10 flex items-center justify-center bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg transition-colors"
+                className="w-10 h-10 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors font-bold text-xl"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                +
               </button>
             </div>
           </div>
