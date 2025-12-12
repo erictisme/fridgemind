@@ -28,6 +28,8 @@ export default function SuggestionsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [inventoryCount, setInventoryCount] = useState(0)
+  const [addingToList, setAddingToList] = useState<number | null>(null)
+  const [addedSuccess, setAddedSuccess] = useState<number | null>(null)
 
   useEffect(() => {
     fetchSuggestions()
@@ -61,6 +63,37 @@ export default function SuggestionsPage() {
 
   const toggleExpand = (index: number) => {
     setExpandedIndex(expandedIndex === index ? null : index)
+  }
+
+  const handleAddToShoppingList = async (index: number, ingredients: string[]) => {
+    if (ingredients.length === 0) return
+
+    setAddingToList(index)
+    setAddedSuccess(null)
+
+    try {
+      // Add each ingredient to the shopping list
+      for (const ingredient of ingredients) {
+        await fetch('/api/shopping-list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: ingredient,
+            quantity: 1,
+            source: 'suggestion',
+          }),
+        })
+      }
+
+      setAddedSuccess(index)
+      // Clear success after 3 seconds
+      setTimeout(() => setAddedSuccess(null), 3000)
+    } catch (err) {
+      console.error('Failed to add to shopping list:', err)
+      setError('Failed to add items to shopping list')
+    } finally {
+      setAddingToList(null)
+    }
   }
 
   return (
@@ -233,13 +266,45 @@ export default function SuggestionsPage() {
                     {suggestion.additional_ingredients_needed.length > 0 && (
                       <div>
                         <h4 className="font-medium text-gray-900 mb-2 text-sm">You'll also need:</h4>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 mb-3">
                           {suggestion.additional_ingredients_needed.map((item, i) => (
                             <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                               {item}
                             </span>
                           ))}
                         </div>
+                        {/* Add to Shopping List button */}
+                        {addedSuccess === index ? (
+                          <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Added to shopping list!
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAddToShoppingList(index, suggestion.additional_ingredients_needed)
+                            }}
+                            disabled={addingToList === index}
+                            className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {addingToList === index ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                Adding...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                                Add {suggestion.additional_ingredients_needed.length} to Shopping List
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
