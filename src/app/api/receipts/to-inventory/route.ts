@@ -65,8 +65,21 @@ export async function POST(request: NextRequest) {
 
         // Let Gemini decide storage location AND expiry date
         console.log(`[to-inventory] Calling estimateStorage for: ${item.name}`)
-        const storageEstimate = await estimateStorage(item.name, receipt_date)
-        console.log(`[to-inventory] Storage estimate for ${item.name}:`, storageEstimate)
+        let storageEstimate
+        try {
+          storageEstimate = await estimateStorage(item.name, receipt_date)
+          console.log(`[to-inventory] Storage estimate for ${item.name}:`, storageEstimate)
+        } catch (geminiError) {
+          console.error(`[to-inventory] Gemini failed for ${item.name}:`, geminiError)
+          // Fallback: default to fridge with 7 days expiry
+          const fallbackExpiry = new Date(receipt_date)
+          fallbackExpiry.setDate(fallbackExpiry.getDate() + 7)
+          storageEstimate = {
+            location: 'fridge',
+            expiry_date: fallbackExpiry.toISOString().split('T')[0]
+          }
+          console.log(`[to-inventory] Using fallback for ${item.name}:`, storageEstimate)
+        }
 
         // Insert into inventory using the same pattern as inventory/route.ts
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
