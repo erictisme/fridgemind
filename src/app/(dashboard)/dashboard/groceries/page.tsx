@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 interface Receipt {
   id: string
@@ -12,6 +13,21 @@ interface Receipt {
   payment_method?: string
   file_name?: string
   created_at: string
+}
+
+interface ReceiptItem {
+  name: string
+  quantity: number
+  unit: string
+  category: string
+  total_price: number
+}
+
+interface ParsedReceipt {
+  store_name: string
+  receipt_date: string
+  total: number
+  items: ReceiptItem[]
 }
 
 interface Analytics {
@@ -30,25 +46,44 @@ interface Analytics {
   top_items: Array<{ name: string; total: number; count: number }>
 }
 
-export default function GroceriesPage() {
+// Category emojis
+const CATEGORY_EMOJI: Record<string, string> = {
+  produce: '🥬',
+  dairy: '🥛',
+  protein: '🍖',
+  pantry: '🥫',
+  beverage: '🥤',
+  frozen: '❄️',
+  snacks: '🍪',
+  bakery: '🍞',
+  household: '🧹',
+  other: '📦',
+}
+
+export default function HistoryPage() {
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'upload' ? 'upload' : 'dashboard'
+
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<string[]>([])
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'receipts' | 'upload'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'receipts' | 'upload'>(initialTab)
+
+  // New state for inventory flow
+  const [lastParsedReceipt, setLastParsedReceipt] = useState<ParsedReceipt | null>(null)
+  const [addingToInventory, setAddingToInventory] = useState(false)
+  const [inventorySuccess, setInventorySuccess] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      // Fetch receipts
       const receiptsRes = await fetch('/api/receipts')
       if (receiptsRes.ok) {
         const data = await receiptsRes.json()
         setReceipts(data.receipts || [])
       }
 
-      // Fetch analytics
       const analyticsRes = await fetch('/api/receipts/analytics?months=6')
       if (analyticsRes.ok) {
         const data = await analyticsRes.json()
@@ -68,62 +103,92 @@ export default function GroceriesPage() {
     if (!files || files.length === 0) return
 
     setUploading(true)
-    setUploadProgress([])
-    const fileArray = Array.from(files)
+    setLastParsedReceipt(null)
+    setInventorySuccess(null)
 
-    for (let i = 0; i < fileArray.length; i++) {
-      const file = fileArray[i]
-      setUploadProgress((prev) => [...prev, `Processing ${file.name}...`])
+    // Only process first file for now (simpler UX)
+    const file = files[0]
 
-      try {
-        // Read file as base64
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        })
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
-        // Send to API
-        const res = await fetch('/api/receipts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            file_data: base64,
-            file_type: file.type,
-            file_name: file.name,
-          }),
-        })
+      const res = await fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_data: base64,
+          file_type: file.type,
+          file_name: file.name,
+        }),
+      })
 
-        const data = await res.json()
+      const data = await res.json()
 
-        if (res.ok) {
-          setUploadProgress((prev) => [
-            ...prev.slice(0, -1),
-            `✓ ${file.name}: $${data.parsed.total.toFixed(2)} - ${data.items_count} items`,
-          ])
-        } else if (data.duplicate) {
-          // Handle duplicate receipt
-          setUploadProgress((prev) => [
-            ...prev.slice(0, -1),
-            `⚠ ${file.name}: Duplicate - already have ${data.existing.store} receipt from ${data.existing.date} for $${data.existing.total.toFixed(2)}`,
-          ])
-        } else {
-          setUploadProgress((prev) => [
-            ...prev.slice(0, -1),
-            `✗ ${file.name}: ${data.error || 'Failed to process'}`,
-          ])
-        }
-      } catch (error) {
-        setUploadProgress((prev) => [
-          ...prev.slice(0, -1),
-          `✗ ${file.name}: ${error instanceof Error ? error.message : 'Error'}`,
-        ])
+      if (res.ok) {
+        // Store parsed receipt for inventory flow
+        setLastParsedReceipt(data.parsed)
+        fetchData() // Refresh receipts list
+      } else if (data.duplicate) {
+        alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
+      } else {
+        alert(data.error || 'Failed to process receipt')
       }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Error processing file')
     }
 
     setUploading(false)
-    fetchData() // Refresh data after uploads
+  }
+
+  const handleAddToInventory = async () => {
+    if (!lastParsedReceipt) return
+
+    // Filter out household items
+    const foodItems = lastParsedReceipt.items.filter(
+      item => item.category !== 'household'
+    )
+
+    if (foodItems.length === 0) {
+      alert('No food items to add (only household items found)')
+      return
+    }
+
+    setAddingToInventory(true)
+
+    try {
+      const res = await fetch('/api/receipts/to-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receipt_date: lastParsedReceipt.receipt_date,
+          items: foodItems.map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+            unit: item.unit,
+            category: item.category,
+            location: 'fridge', // Default everything to fridge
+          })),
+        }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        setInventorySuccess(`Added ${data.inserted} items to inventory`)
+        setLastParsedReceipt(null) // Clear the form
+      } else {
+        alert(data.error || 'Failed to add to inventory')
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Error adding to inventory')
+    }
+
+    setAddingToInventory(false)
   }
 
   const deleteReceipt = async (id: string) => {
@@ -139,9 +204,7 @@ export default function GroceriesPage() {
     }
   }
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`
-  }
+  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
@@ -174,10 +237,12 @@ export default function GroceriesPage() {
     )
   }
 
+  const foodItemsCount = lastParsedReceipt?.items.filter(i => i.category !== 'household').length || 0
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Grocery Expenses</h1>
+        <h1 className="text-2xl font-bold text-gray-900">History</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('dashboard')}
@@ -187,7 +252,7 @@ export default function GroceriesPage() {
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            Dashboard
+            Overview
           </button>
           <button
             onClick={() => setActiveTab('receipts')}
@@ -215,66 +280,119 @@ export default function GroceriesPage() {
       {/* Upload Tab */}
       {activeTab === 'upload' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
-            <div className="text-center">
-              <div className="text-4xl mb-4">📄</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Upload Receipt PDFs or Images
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Drag & drop files here, or click to select. Supports PDF and image files.
-              </p>
-              <input
-                type="file"
-                multiple
-                accept=".pdf,image/*"
-                onChange={(e) => handleFileUpload(e.target.files)}
-                className="hidden"
-                id="file-upload"
-                disabled={uploading}
-              />
-              <label
-                htmlFor="file-upload"
-                className={`inline-block px-6 py-3 rounded-lg font-medium cursor-pointer ${
-                  uploading
-                    ? 'bg-gray-300 text-gray-500'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                }`}
+          {/* Success message */}
+          {inventorySuccess && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">✅</span>
+                <span className="text-emerald-800 font-medium">{inventorySuccess}</span>
+              </div>
+              <button
+                onClick={() => setInventorySuccess(null)}
+                className="text-emerald-600 hover:text-emerald-800"
               >
-                {uploading ? 'Processing...' : 'Select Files'}
-              </label>
+                ✕
+              </button>
             </div>
-          </div>
+          )}
 
-          {uploadProgress.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4">
-              <h4 className="font-medium text-gray-900 mb-3">Upload Progress</h4>
-              <div className="space-y-2">
-                {uploadProgress.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`text-sm ${
-                      msg.startsWith('✓')
-                        ? 'text-emerald-600'
-                        : msg.startsWith('⚠')
-                        ? 'text-amber-600'
-                        : msg.startsWith('✗')
-                        ? 'text-red-600'
-                        : 'text-gray-600'
-                    }`}
+          {/* Parsed receipt - Add to Inventory flow */}
+          {lastParsedReceipt && (
+            <div className="bg-white rounded-xl border-2 border-emerald-500 p-6 space-y-4">
+              {/* Header with Add to Inventory button at TOP */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {lastParsedReceipt.store_name}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {new Date(lastParsedReceipt.receipt_date).toLocaleDateString()} • {formatCurrency(lastParsedReceipt.total)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setLastParsedReceipt(null)}
+                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
                   >
-                    {msg}
-                  </div>
-                ))}
+                    Skip
+                  </button>
+                  <button
+                    onClick={handleAddToInventory}
+                    disabled={addingToInventory || foodItemsCount === 0}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    {addingToInventory ? 'Adding...' : `Add ${foodItemsCount} items to Inventory`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Items list (read-only, just for review) */}
+              <div className="border-t pt-4">
+                <p className="text-sm text-gray-500 mb-3">
+                  Food items will be added to fridge (you can move them later in Inventory)
+                </p>
+                <div className="grid gap-2 max-h-64 overflow-y-auto">
+                  {lastParsedReceipt.items.map((item, i) => {
+                    const isHousehold = item.category === 'household'
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center justify-between py-2 px-3 rounded-lg ${
+                          isHousehold ? 'bg-gray-100 text-gray-400' : 'bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{CATEGORY_EMOJI[item.category] || '📦'}</span>
+                          <span className={isHousehold ? 'line-through' : ''}>
+                            {item.name}
+                          </span>
+                          {isHousehold && (
+                            <span className="text-xs bg-gray-200 px-2 py-0.5 rounded">skipped</span>
+                          )}
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {item.quantity} {item.unit}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )}
 
-          <div className="bg-blue-50 rounded-xl p-4 text-sm text-blue-800">
-            <strong>Tip:</strong> For best results, upload clear PDF receipts from FairPrice or other
-            Singapore supermarkets. The AI will automatically extract store info, date, items, and
-            totals.
-          </div>
+          {/* Upload area */}
+          {!lastParsedReceipt && (
+            <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
+              <div className="text-center">
+                <div className="text-4xl mb-4">🧾</div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Upload Receipt
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  Take a photo or upload a PDF. Items can be added to your inventory.
+                </p>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={(e) => handleFileUpload(e.target.files)}
+                  className="hidden"
+                  id="file-upload"
+                  disabled={uploading}
+                />
+                <label
+                  htmlFor="file-upload"
+                  className={`inline-block px-6 py-3 rounded-lg font-medium cursor-pointer ${
+                    uploading
+                      ? 'bg-gray-300 text-gray-500'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  {uploading ? 'Processing...' : 'Select File'}
+                </label>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -351,7 +469,6 @@ export default function GroceriesPage() {
 
           {/* Category & Top Items */}
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Category Breakdown */}
             {analytics.category_breakdown.length > 0 && (
               <div className="bg-white rounded-xl p-6 border border-gray-200">
                 <h3 className="font-semibold text-gray-900 mb-4">Spending by Category</h3>
@@ -378,7 +495,6 @@ export default function GroceriesPage() {
               </div>
             )}
 
-            {/* Top Items */}
             {analytics.top_items.length > 0 && (
               <div className="bg-white rounded-xl p-6 border border-gray-200">
                 <h3 className="font-semibold text-gray-900 mb-4">Top Items by Spend</h3>
@@ -405,13 +521,12 @@ export default function GroceriesPage() {
             )}
           </div>
 
-          {/* Empty State */}
           {analytics.summary.receipt_count === 0 && (
             <div className="text-center py-12 bg-gray-50 rounded-xl">
               <div className="text-4xl mb-4">📊</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No data yet</h3>
               <p className="text-gray-600 mb-4">
-                Upload your first receipt to start tracking expenses
+                Upload your first receipt to start tracking
               </p>
               <button
                 onClick={() => setActiveTab('upload')}

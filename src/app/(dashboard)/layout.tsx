@@ -30,7 +30,7 @@ export default async function DashboardLayout({
                 <NavLink href="/dashboard/scan">Scan</NavLink>
                 <NavLink href="/dashboard/meal-plan">Meal Plan</NavLink>
                 <NavLink href="/dashboard/shopping-list">Shopping List</NavLink>
-                <NavLink href="/dashboard/groceries">Groceries</NavLink>
+                <NavLink href="/dashboard/groceries">History</NavLink>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -49,7 +49,7 @@ export default async function DashboardLayout({
           <MobileNavLink href="/dashboard/scan">Scan</MobileNavLink>
           <MobileNavLink href="/dashboard/meal-plan">Meals</MobileNavLink>
           <MobileNavLink href="/dashboard/shopping-list">Shop</MobileNavLink>
-          <MobileNavLink href="/dashboard/groceries">Groceries</MobileNavLink>
+          <MobileNavLink href="/dashboard/groceries">History</MobileNavLink>
         </div>
       </div>
 
