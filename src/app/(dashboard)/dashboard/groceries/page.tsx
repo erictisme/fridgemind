@@ -132,6 +132,8 @@ export default function HistoryPage() {
 
       if (res.ok) {
         // Store parsed receipt for inventory flow
+        console.log('[groceries] Receipt parsed successfully:', data.parsed)
+        console.log('[groceries] Items:', data.parsed?.items)
         setLastParsedReceipt(data.parsed)
         fetchData() // Refresh receipts list
       } else if (data.duplicate) {
@@ -147,6 +149,7 @@ export default function HistoryPage() {
   }
 
   const handleAddToInventory = async () => {
+    console.log('[groceries] handleAddToInventory called, lastParsedReceipt:', lastParsedReceipt)
     if (!lastParsedReceipt) return
 
     // Filter out household items
@@ -161,32 +164,37 @@ export default function HistoryPage() {
 
     setAddingToInventory(true)
 
+    const payload = {
+      receipt_date: lastParsedReceipt.receipt_date,
+      items: foodItems.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        category: item.category,
+      })),
+    }
+    console.log('[groceries] Sending to inventory:', payload)
+
     try {
       const res = await fetch('/api/receipts/to-inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          receipt_date: lastParsedReceipt.receipt_date,
-          items: foodItems.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            unit: item.unit,
-            category: item.category,
-            // Location is determined by AI in the API
-          })),
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await res.json()
+      console.log('[groceries] Response:', { ok: res.ok, status: res.status, data })
 
       if (res.ok) {
         // Redirect to inventory to see the added items
+        console.log('[groceries] Success! Redirecting to inventory...')
         router.push('/dashboard/inventory')
       } else {
         alert(data.error || 'Failed to add to inventory')
         setAddingToInventory(false)
       }
     } catch (error) {
+      console.error('[groceries] Error:', error)
       alert(error instanceof Error ? error.message : 'Error adding to inventory')
       setAddingToInventory(false)
     }

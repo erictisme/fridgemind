@@ -28,22 +28,28 @@ const categoryMapping: Record<string, { storage_category: string; nutritional_ty
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[to-inventory] Starting POST request')
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
+      console.log('[to-inventory] No user found - unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    console.log('[to-inventory] User authenticated:', user.id)
 
     const body = await request.json() as RequestBody
     const { items, receipt_date } = body
+    console.log('[to-inventory] Received:', { itemCount: items?.length, receipt_date })
 
     if (!items || items.length === 0) {
+      console.log('[to-inventory] No items provided')
       return NextResponse.json({ error: 'No items provided' }, { status: 400 })
     }
 
     if (!receipt_date) {
+      console.log('[to-inventory] No receipt date')
       return NextResponse.json({ error: 'Receipt date is required' }, { status: 400 })
     }
 
@@ -52,12 +58,15 @@ export async function POST(request: NextRequest) {
 
     // Process each item
     for (const item of items) {
+      console.log(`[to-inventory] Processing item: ${item.name}`)
       try {
         // Map category to storage_category and nutritional_type
         const mapping = categoryMapping[item.category] || categoryMapping.other
 
         // Let Gemini decide storage location AND expiry date
+        console.log(`[to-inventory] Calling estimateStorage for: ${item.name}`)
         const storageEstimate = await estimateStorage(item.name, receipt_date)
+        console.log(`[to-inventory] Storage estimate for ${item.name}:`, storageEstimate)
 
         // Insert into inventory using the same pattern as inventory/route.ts
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,13 +87,14 @@ export async function POST(request: NextRequest) {
           })
 
         if (error) {
-          console.error(`Failed to insert ${item.name}:`, error)
+          console.error(`[to-inventory] Failed to insert ${item.name}:`, error)
           errors.push({ item: item.name, error: error.message })
         } else {
+          console.log(`[to-inventory] Successfully inserted: ${item.name}`)
           insertedItems.push(item.name)
         }
       } catch (error) {
-        console.error(`Error processing ${item.name}:`, error)
+        console.error(`[to-inventory] Error processing ${item.name}:`, error)
         errors.push({
           item: item.name,
           error: error instanceof Error ? error.message : 'Unknown error'
@@ -92,6 +102,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[to-inventory] Complete. Inserted: ${insertedItems.length}, Errors: ${errors.length}`)
     // Return success response
     return NextResponse.json({
       success: true,
@@ -100,7 +111,7 @@ export async function POST(request: NextRequest) {
       ...(errors.length > 0 && { errors }),
     })
   } catch (error) {
-    console.error('Receipt to inventory error:', error)
+    console.error('[to-inventory] Receipt to inventory error:', error)
     return NextResponse.json(
       { error: 'Failed to add items to inventory' },
       { status: 500 }
