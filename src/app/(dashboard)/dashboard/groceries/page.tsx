@@ -337,7 +337,10 @@ export default function HistoryPage() {
                     Skip
                   </button>
                   <button
-                    onClick={handleAddToInventory}
+                    onClick={() => {
+                      console.log('[groceries] Button clicked!')
+                      handleAddToInventory()
+                    }}
                     disabled={addingToInventory || foodItemsCount === 0}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                   >
