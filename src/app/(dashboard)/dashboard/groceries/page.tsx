@@ -186,9 +186,20 @@ export default function HistoryPage() {
       console.log('[groceries] Response:', { ok: res.ok, status: res.status, data })
 
       if (res.ok) {
-        // Redirect to inventory to see the added items
-        console.log('[groceries] Success! Redirecting to inventory...')
-        router.push('/dashboard/inventory')
+        // Check if there were any errors
+        if (data.errors && data.errors.length > 0) {
+          console.error('[groceries] Some items failed:', data.errors)
+          alert(`Added ${data.inserted} items, but ${data.errors.length} failed:\n${data.errors.map((e: {item: string, error: string}) => `${e.item}: ${e.error}`).join('\n')}`)
+        }
+
+        if (data.inserted > 0) {
+          // Redirect to inventory to see the added items
+          console.log('[groceries] Success! Redirecting to inventory...')
+          router.push('/dashboard/inventory')
+        } else {
+          alert('No items were added. Check console for errors.')
+          setAddingToInventory(false)
+        }
       } else {
         alert(data.error || 'Failed to add to inventory')
         setAddingToInventory(false)
