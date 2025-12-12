@@ -166,14 +166,14 @@ export default function DashboardPage() {
         </Link>
 
         <Link
-          href="/dashboard/eating-out"
+          href="/dashboard/log-meal"
           className="bg-amber-50 hover:bg-amber-100 rounded-2xl p-5 transition-colors"
         >
           <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center mb-3">
             <span className="text-xl">🍽️</span>
           </div>
-          <h3 className="font-semibold text-gray-900">Eating Out</h3>
-          <p className="text-sm text-gray-500">Track restaurant meals</p>
+          <h3 className="font-semibold text-gray-900">Log Meal</h3>
+          <p className="text-sm text-gray-500">Track what you eat</p>
         </Link>
       </div>
 

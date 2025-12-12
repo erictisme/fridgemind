@@ -330,6 +330,67 @@ Do not include any text before or after the JSON array.`
   }
 }
 
+// Nutrition estimation for home-cooked meals from inventory items
+export async function estimateHomeMealNutrition(
+  items: Array<{ name: string; quantity: number; unit: string }>
+): Promise<NutritionEstimate> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const itemsList = items.map(item => `- ${item.name}: ${item.quantity} ${item.unit}`).join('\n')
+
+  const prompt = `You are a nutrition expert. Estimate the combined nutritional content of this home-cooked meal made from these ingredients:
+
+INGREDIENTS USED:
+${itemsList}
+
+Assume typical home cooking methods and portion sizes. Be realistic with estimates.
+
+Return ONLY a valid JSON object with this structure:
+{
+  "meal_name": "Descriptive name for this combination (e.g., 'Stir-fried Cabbage with Tofu and Avocado')",
+  "detected_components": ["ingredient1", "ingredient2", ...],
+  "estimated_calories": number,
+  "protein_grams": number,
+  "carbs_grams": number,
+  "fat_grams": number,
+  "fiber_grams": number,
+  "vegetable_servings": number (0, 0.5, 1, 1.5, 2, etc.),
+  "health_assessment": "balanced" | "protein_heavy" | "carb_heavy" | "high_fat" | "vegetable_rich" | "light",
+  "notes": "Brief observation about the meal's nutrition"
+}
+
+Do not include any text before or after the JSON.`
+
+  const result = await model.generateContent(prompt)
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    return {
+      meal_name: parsed.meal_name || 'Home-cooked meal',
+      detected_components: parsed.detected_components || items.map(i => i.name),
+      estimated_calories: parsed.estimated_calories || 0,
+      protein_grams: parsed.protein_grams || 0,
+      carbs_grams: parsed.carbs_grams || 0,
+      fat_grams: parsed.fat_grams || 0,
+      fiber_grams: parsed.fiber_grams || 0,
+      vegetable_servings: parsed.vegetable_servings || 0,
+      health_assessment: parsed.health_assessment || 'balanced',
+      notes: parsed.notes || '',
+    }
+  } catch (err) {
+    console.error('Failed to parse home meal nutrition response:', text, err)
+    throw new Error('Failed to estimate nutrition')
+  }
+}
+
 export async function analyzeMultipleImages(imagesBase64: string[]): Promise<VisionResponse> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
