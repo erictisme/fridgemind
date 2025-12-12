@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 interface Receipt {
   id: string
@@ -62,6 +62,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 export default function HistoryPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const initialTab = searchParams.get('tab') === 'upload' ? 'upload' : 'dashboard'
 
   const [receipts, setReceipts] = useState<Receipt[]>([])
@@ -171,7 +172,7 @@ export default function HistoryPage() {
             quantity: item.quantity,
             unit: item.unit,
             category: item.category,
-            location: 'fridge', // Default everything to fridge
+            // Location is determined by AI in the API
           })),
         }),
       })
@@ -179,16 +180,16 @@ export default function HistoryPage() {
       const data = await res.json()
 
       if (res.ok) {
-        setInventorySuccess(`Added ${data.inserted} items to inventory`)
-        setLastParsedReceipt(null) // Clear the form
+        // Redirect to inventory to see the added items
+        router.push('/dashboard/inventory')
       } else {
         alert(data.error || 'Failed to add to inventory')
+        setAddingToInventory(false)
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Error adding to inventory')
+      setAddingToInventory(false)
     }
-
-    setAddingToInventory(false)
   }
 
   const deleteReceipt = async (id: string) => {
@@ -329,7 +330,7 @@ export default function HistoryPage() {
               {/* Items list (read-only, just for review) */}
               <div className="border-t pt-4">
                 <p className="text-sm text-gray-500 mb-3">
-                  Food items will be added to fridge (you can move them later in Inventory)
+                  AI will determine storage location (fridge/freezer/pantry) for each item
                 </p>
                 <div className="grid gap-2 max-h-64 overflow-y-auto">
                   {lastParsedReceipt.items.map((item, i) => {

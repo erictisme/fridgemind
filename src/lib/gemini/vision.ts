@@ -114,6 +114,13 @@ export interface ExpiryEstimate {
   reasoning: string
 }
 
+export interface StorageEstimate {
+  location: 'fridge' | 'freezer' | 'pantry'
+  expiry_days: number
+  expiry_date: string
+  reasoning: string
+}
+
 const EXPIRY_PROMPT = `You are a food safety expert. Given a food item name, storage location, and purchase date, estimate when it will expire.
 
 Consider:
@@ -174,6 +181,81 @@ Purchase date: ${purchaseDate}`
   } catch (err) {
     console.error('Failed to parse Gemini expiry response:', text, err)
     throw new Error('Failed to estimate expiry date')
+  }
+}
+
+const STORAGE_PROMPT = `You are a food storage expert. Given a food item name and purchase date, recommend where to store it and estimate when it will expire.
+
+Storage locations:
+- fridge: Perishable items that need refrigeration (dairy, fresh produce, meat, eggs, opened condiments)
+- freezer: Items to freeze for long-term storage (frozen foods, meat for later)
+- pantry: Shelf-stable items (canned goods, dry pasta, rice, unopened sauces, snacks, bread)
+
+Return ONLY a valid JSON object:
+{
+  "location": "fridge" | "freezer" | "pantry",
+  "expiry_days": number (days from purchase date until expiry),
+  "reasoning": "brief explanation"
+}
+
+Do not include any text before or after the JSON.`
+
+export async function estimateStorage(
+  itemName: string,
+  purchaseDate: string
+): Promise<StorageEstimate> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const prompt = `${STORAGE_PROMPT}
+
+Food item: ${itemName}
+Purchase date: ${purchaseDate}`
+
+  const result = await model.generateContent(prompt)
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    // Validate location
+    const validLocations = ['fridge', 'freezer', 'pantry']
+    const location = validLocations.includes(parsed.location) ? parsed.location : 'fridge'
+
+    // Validate expiry_days
+    const expiryDays = typeof parsed.expiry_days === 'number' && parsed.expiry_days > 0
+      ? parsed.expiry_days
+      : 7
+
+    // Calculate expiry date
+    const purchase = new Date(purchaseDate)
+    if (isNaN(purchase.getTime())) {
+      throw new Error('Invalid purchase date')
+    }
+    const expiryDate = new Date(purchase.getTime() + expiryDays * 24 * 60 * 60 * 1000)
+
+    return {
+      location,
+      expiry_days: expiryDays,
+      expiry_date: expiryDate.toISOString().split('T')[0],
+      reasoning: parsed.reasoning || 'Estimated based on typical storage requirements',
+    }
+  } catch (err) {
+    console.error('Failed to parse Gemini storage response:', text, err)
+    // Fallback to fridge with 7 days
+    const purchase = new Date(purchaseDate)
+    const fallbackExpiry = new Date(purchase.getTime() + 7 * 24 * 60 * 60 * 1000)
+    return {
+      location: 'fridge',
+      expiry_days: 7,
+      expiry_date: fallbackExpiry.toISOString().split('T')[0],
+      reasoning: 'Default estimate (AI parsing failed)',
+    }
   }
 }
 
