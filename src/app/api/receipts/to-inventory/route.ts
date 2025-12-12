@@ -56,8 +56,21 @@ export async function POST(request: NextRequest) {
     const insertedItems: string[] = []
     const errors: Array<{ item: string; error: string }> = []
 
+    // Aggregate duplicate items (same name) by summing quantities
+    const aggregatedItems = items.reduce((acc, item) => {
+      const existing = acc.find(i => i.name.toLowerCase() === item.name.toLowerCase())
+      if (existing) {
+        existing.quantity += item.quantity
+      } else {
+        acc.push({ ...item })
+      }
+      return acc
+    }, [] as ReceiptItemWithInventory[])
+
+    console.log(`[to-inventory] Aggregated ${items.length} items into ${aggregatedItems.length} unique items`)
+
     // Process each item
-    for (const item of items) {
+    for (const item of aggregatedItems) {
       console.log(`[to-inventory] Processing item: ${item.name}`)
       try {
         // Map category to storage_category and nutritional_type
