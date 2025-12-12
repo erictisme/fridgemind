@@ -9,6 +9,7 @@ interface InventoryItemInput {
   location: string
   quantity: number
   unit: string
+  purchase_date?: string
   expiry_date: string
   freshness: string
   confidence: number
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
               unit: item.unit,
               storage_category: item.storage_category,
               nutritional_type: item.nutritional_type,
+              purchase_date: item.purchase_date || null,
               expiry_date: item.expiry_date,
               freshness: item.freshness,
               confidence: item.confidence,
@@ -122,6 +124,7 @@ export async function POST(request: NextRequest) {
               location: location,
               quantity: item.quantity,
               unit: item.unit,
+              purchase_date: item.purchase_date || null,
               expiry_date: item.expiry_date,
               freshness: item.freshness,
               confidence: item.confidence,
@@ -182,6 +185,7 @@ export async function POST(request: NextRequest) {
             unit: item.unit,
             storage_category: item.storage_category,
             nutritional_type: item.nutritional_type,
+            purchase_date: item.purchase_date || null,
             expiry_date: item.expiry_date,
             freshness: item.freshness,
             confidence: item.confidence,
@@ -202,6 +206,7 @@ export async function POST(request: NextRequest) {
             location: item.location,
             quantity: item.quantity,
             unit: item.unit,
+            purchase_date: item.purchase_date || null,
             expiry_date: item.expiry_date,
             freshness: item.freshness,
             confidence: item.confidence,

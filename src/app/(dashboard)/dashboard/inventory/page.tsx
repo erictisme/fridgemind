@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 
 interface InventoryItem {
@@ -11,6 +11,7 @@ interface InventoryItem {
   location: string
   quantity: number
   unit: string
+  purchase_date: string | null
   expiry_date: string
   freshness: string
   confidence: number
@@ -34,6 +35,7 @@ const typeEmojis: Record<string, string> = {
 
 const TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
 const LOCATIONS = ['fridge', 'freezer', 'pantry'] as const
+const FRESHNESS_LEVELS = ['fresh', 'use_soon', 'expired'] as const
 
 // Default shelf life in days based on type + location
 const getDefaultExpiryDays = (type: string, location: string): number => {
@@ -122,6 +124,8 @@ export default function InventoryPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newItem, setNewItem] = useState(getDefaultNewItem())
   const [showLegend, setShowLegend] = useState(false)
+  const [estimatingExpiry, setEstimatingExpiry] = useState(false)
+  const estimateAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     fetchInventory()
@@ -265,6 +269,59 @@ export default function InventoryPage() {
     }
 
     setNewItem(updated)
+  }
+
+  const updateEditingItem = (field: keyof InventoryItem, value: string | number | null) => {
+    if (!editingItem) return
+    setEditingItem({ ...editingItem, [field]: value })
+  }
+
+  const handlePurchaseDateChange = async (purchaseDate: string) => {
+    if (!editingItem) return
+
+    // Update purchase date immediately
+    setEditingItem(prev => prev ? { ...prev, purchase_date: purchaseDate || null } : null)
+
+    // If clearing the date, don't estimate
+    if (!purchaseDate) return
+
+    // Cancel any pending estimation request
+    if (estimateAbortRef.current) {
+      estimateAbortRef.current.abort()
+    }
+
+    // Auto-estimate expiry using Gemini
+    const abortController = new AbortController()
+    estimateAbortRef.current = abortController
+
+    setEstimatingExpiry(true)
+    try {
+      const response = await fetch('/api/estimate-expiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemName: editingItem.name,
+          location: editingItem.location,
+          purchaseDate,
+        }),
+        signal: abortController.signal,
+      })
+
+      if (response.ok) {
+        const estimate = await response.json()
+        setEditingItem(prev => prev ? {
+          ...prev,
+          expiry_date: estimate.expiry_date,
+        } : null)
+      }
+    } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('Failed to estimate expiry:', err)
+      }
+    } finally {
+      setEstimatingExpiry(false)
+    }
   }
 
   const filteredItems = locationFilter === 'all'
@@ -528,8 +585,19 @@ export default function InventoryPage() {
                     <span className="capitalize">{item.location}</span>
                   </div>
 
-                  <div className="mt-1 text-xs text-gray-400">
-                    {isExpanded ? '▲ Collapse' : '▼ Tap to edit'}
+                  <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                    {item.purchase_date && (
+                      <p>Bought: {new Date(item.purchase_date).toLocaleDateString()}</p>
+                    )}
+                    <p>Expires: {new Date(item.expiry_date).toLocaleDateString()}</p>
+                  </div>
+
+                  {/* Expand hint */}
+                  <div className="mt-2 text-xs text-gray-400 flex items-center gap-1">
+                    <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                    {isExpanded ? 'Collapse' : 'Tap to edit'}
                   </div>
                 </div>
 
@@ -571,14 +639,48 @@ export default function InventoryPage() {
                       </div>
                     </div>
 
+                    {/* Purchase Date + Auto-estimate expiry */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Purchase Date
+                        <span className="text-gray-400 font-normal ml-1">(auto-estimates expiry)</span>
+                      </label>
                       <input
                         type="date"
-                        value={editingItem.expiry_date?.split('T')[0] || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, expiry_date: e.target.value })}
+                        value={editingItem.purchase_date?.split('T')[0] || ''}
+                        onChange={(e) => handlePurchaseDateChange(e.target.value)}
                         className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
                       />
+                    </div>
+
+                    {/* Expiry + Freshness row */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Expiry Date
+                          {estimatingExpiry && (
+                            <span className="ml-2 text-emerald-600 animate-pulse">estimating...</span>
+                          )}
+                        </label>
+                        <input
+                          type="date"
+                          value={editingItem.expiry_date?.split('T')[0] || ''}
+                          onChange={(e) => updateEditingItem('expiry_date', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Freshness</label>
+                        <select
+                          value={editingItem.freshness}
+                          onChange={(e) => updateEditingItem('freshness', e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                        >
+                          {FRESHNESS_LEVELS.map(level => (
+                            <option key={level} value={level}>{level.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     {/* Action buttons */}

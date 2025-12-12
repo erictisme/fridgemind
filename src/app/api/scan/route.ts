@@ -25,9 +25,11 @@ export async function POST(request: NextRequest) {
     // Analyze images with Gemini Vision
     const result = await analyzeMultipleImages(images)
 
-    // Calculate expiry dates from days
+    // Calculate expiry dates from days, default purchase_date to today
+    const today = new Date().toISOString().split('T')[0]
     const itemsWithExpiry = result.items.map(item => ({
       ...item,
+      purchase_date: today,
       expiry_date: new Date(Date.now() + item.estimated_expiry_days * 24 * 60 * 60 * 1000)
         .toISOString()
         .split('T')[0],

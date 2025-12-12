@@ -13,6 +13,7 @@ interface DetectedItem {
   nutritional_type: string
   quantity: number
   unit: string
+  purchase_date: string
   expiry_date: string
   freshness: string
   confidence: number
@@ -28,6 +29,7 @@ interface ExistingInventoryItem {
   nutritional_type: string
   quantity: number
   unit: string
+  purchase_date: string | null
   expiry_date: string
   freshness: string
   confidence: number
@@ -36,6 +38,7 @@ interface ExistingInventoryItem {
 
 const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc']
 const UNITS = ['serving', 'piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
+const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
 
 interface SaveResult {
   inserted: number
@@ -66,7 +69,9 @@ export default function ScanPage() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [converting, setConverting] = useState(false)
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
+  const [estimatingExpiry, setEstimatingExpiry] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const estimateAbortRef = useRef<AbortController | null>(null)
   const router = useRouter()
 
   const handleLocationSelect = (loc: Location) => {
@@ -212,6 +217,7 @@ export default function ScanPage() {
           nutritional_type: item.nutritional_type,
           quantity: 0,  // Mark as not detected
           unit: item.unit,
+          purchase_date: item.purchase_date || '',
           expiry_date: item.expiry_date,
           freshness: item.freshness,
           confidence: 0,
@@ -264,6 +270,60 @@ export default function ScanPage() {
   const deleteItem = (index: number) => {
     setDetectedItems(prev => prev.filter((_, i) => i !== index))
     setEditingIndex(null)
+  }
+
+  const handlePurchaseDateChange = async (index: number, purchaseDate: string) => {
+    const item = detectedItems[index]
+    if (!item) return
+
+    // Update the purchase date immediately
+    setDetectedItems(prev =>
+      prev.map((it, i) =>
+        i === index ? { ...it, purchase_date: purchaseDate } : it
+      )
+    )
+
+    // If clearing the date, don't estimate
+    if (!purchaseDate) return
+
+    // Cancel any pending estimation request
+    if (estimateAbortRef.current) {
+      estimateAbortRef.current.abort()
+    }
+
+    // Auto-estimate expiry using Gemini
+    const abortController = new AbortController()
+    estimateAbortRef.current = abortController
+
+    setEstimatingExpiry(index)
+    try {
+      const response = await fetch('/api/estimate-expiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemName: item.name,
+          location: location,
+          purchaseDate,
+        }),
+        signal: abortController.signal,
+      })
+
+      if (response.ok) {
+        const estimate = await response.json()
+        setDetectedItems(prev =>
+          prev.map((it, i) =>
+            i === index ? { ...it, expiry_date: estimate.expiry_date } : it
+          )
+        )
+      }
+    } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('Failed to estimate expiry:', err)
+      }
+    } finally {
+      setEstimatingExpiry(null)
+    }
   }
 
   const handleSave = async () => {
@@ -587,6 +647,20 @@ export default function ScanPage() {
                         <span className="text-xs px-2 py-0.5 bg-purple-100 rounded text-purple-700">
                           {item.nutritional_type}
                         </span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          item.freshness === 'fresh'
+                            ? 'bg-green-100 text-green-700'
+                            : item.freshness === 'use_soon'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {item.freshness.replace('_', ' ')}
+                        </span>
+                        {item.expiry_date && (
+                          <span className="text-xs px-2 py-0.5 bg-orange-100 rounded text-orange-700">
+                            exp: {new Date(item.expiry_date).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -649,15 +723,48 @@ export default function ScanPage() {
                       </select>
                     </div>
 
-                    {/* Expiry Date */}
+                    {/* Purchase Date */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Expiry Date</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Purchase Date
+                        <span className="text-gray-400 font-normal ml-1">(auto-estimates expiry)</span>
+                      </label>
                       <input
                         type="date"
-                        value={item.expiry_date}
-                        onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
+                        value={item.purchase_date}
+                        onChange={(e) => handlePurchaseDateChange(index, e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                       />
+                    </div>
+
+                    {/* Expiry Date and Freshness */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Expiry Date
+                          {estimatingExpiry === index && (
+                            <span className="ml-2 text-emerald-600 animate-pulse">estimating...</span>
+                          )}
+                        </label>
+                        <input
+                          type="date"
+                          value={item.expiry_date}
+                          onChange={(e) => updateItemField(index, 'expiry_date', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Freshness</label>
+                        <select
+                          value={item.freshness}
+                          onChange={(e) => updateItemField(index, 'freshness', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {FRESHNESS_OPTIONS.map(f => (
+                            <option key={f} value={f}>{f.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     {/* Done editing button */}
