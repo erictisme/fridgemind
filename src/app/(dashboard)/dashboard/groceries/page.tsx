@@ -382,18 +382,41 @@ export default function HistoryPage() {
   const handleNormalize = async () => {
     setNormalizing(true)
     try {
-      // Single call - API now handles all items internally with parallel processing
-      const res = await fetch('/api/receipts/backfill-normalize', { method: 'POST' })
-      const data = await res.json()
+      // Process in batches to avoid Vercel timeout
+      let remaining = normStatus?.unnormalized || 0
+      let totalProcessed = 0
 
-      if (!res.ok) {
-        alert(data.error || 'Failed to normalize')
-      } else {
-        // Refresh data after normalization
-        fetchData()
+      while (remaining > 0) {
+        const res = await fetch('/api/receipts/backfill-normalize?limit=50', { method: 'POST' })
+        const data = await res.json()
+
+        if (!res.ok) {
+          alert(data.error || 'Failed to normalize')
+          break
+        }
+
+        totalProcessed += data.processed
+        remaining = data.remaining
+
+        // Update progress in real-time
+        setNormStatus(prev => prev ? {
+          ...prev,
+          normalized: prev.total - remaining,
+          unnormalized: remaining,
+          percent_complete: prev.total ? Math.round(((prev.total - remaining) / prev.total) * 100) : 100,
+        } : null)
+
+        // Small delay to prevent overwhelming the server
+        if (remaining > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
       }
+
+      // Refresh data after all normalization complete
+      await fetchData()
     } catch (error) {
       console.error('Normalization error:', error)
+      alert('Error during normalization')
     }
     setNormalizing(false)
   }
@@ -884,7 +907,7 @@ Total: $14.90"
                   {normalizing ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      Normalizing... ({normStatus.percent_complete}%)
+                      {normStatus.unnormalized} left ({normStatus.percent_complete}%)
                     </>
                   ) : (
                     `Normalize ${normStatus.unnormalized} items`

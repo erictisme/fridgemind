@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
@@ -54,7 +54,7 @@ async function normalizeBatch(items: ReceiptItem[]): Promise<{ normalized_name: 
   return JSON.parse(jsonMatch[0])
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -63,20 +63,19 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch ALL items without normalized_name
+    // Get limit from query params (default 50 to avoid timeout)
+    const { searchParams } = new URL(request.url)
+    const limit = parseInt(searchParams.get('limit') || '50')
+
+    // First get total count of unnormalized items
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: allItems, error: fetchError } = await (supabase as any)
+    const { count: totalUnnormalized } = await (supabase as any)
       .from('receipt_items')
-      .select('id, item_name, category')
+      .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .is('normalized_name', null)
 
-    if (fetchError) {
-      console.error('Error fetching items:', fetchError)
-      return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
-    }
-
-    if (!allItems || allItems.length === 0) {
+    if (!totalUnnormalized || totalUnnormalized === 0) {
       return NextResponse.json({
         success: true,
         message: 'No items need normalization',
@@ -85,58 +84,63 @@ export async function POST() {
       })
     }
 
-    const items = allItems as ReceiptItem[]
-    const BATCH_SIZE = 50 // Process 50 items per AI call
-    const batches: ReceiptItem[][] = []
+    // Fetch only `limit` items without normalized_name
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: items, error: fetchError } = await (supabase as any)
+      .from('receipt_items')
+      .select('id, item_name, category')
+      .eq('user_id', user.id)
+      .is('normalized_name', null)
+      .limit(limit)
 
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      batches.push(items.slice(i, i + BATCH_SIZE))
+    if (fetchError) {
+      console.error('Error fetching items:', fetchError)
+      return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
     }
 
-    // Process all batches in parallel (max 3 concurrent)
+    if (!items || items.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'No items need normalization',
+        processed: 0,
+        remaining: 0,
+      })
+    }
+
+    // Process single batch with AI
     let updatedCount = 0
-    const CONCURRENT_LIMIT = 3
+    try {
+      const normalized = await normalizeBatch(items as ReceiptItem[])
 
-    for (let i = 0; i < batches.length; i += CONCURRENT_LIMIT) {
-      const batchGroup = batches.slice(i, i + CONCURRENT_LIMIT)
-
-      const results = await Promise.all(
-        batchGroup.map(async (batch) => {
-          try {
-            const normalized = await normalizeBatch(batch)
-
-            // Bulk update using Promise.all
-            const updates = batch.map((item, idx) => {
-              if (normalized[idx]) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return (supabase as any)
-                  .from('receipt_items')
-                  .update({
-                    normalized_name: normalized[idx].normalized_name,
-                    food_type: normalized[idx].food_type,
-                  })
-                  .eq('id', item.id)
-              }
-              return Promise.resolve({ error: null })
+      // Bulk update using Promise.all
+      const updates = (items as ReceiptItem[]).map((item, idx) => {
+        if (normalized[idx]) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (supabase as any)
+            .from('receipt_items')
+            .update({
+              normalized_name: normalized[idx].normalized_name,
+              food_type: normalized[idx].food_type,
             })
+            .eq('id', item.id)
+        }
+        return Promise.resolve({ error: null })
+      })
 
-            const updateResults = await Promise.all(updates)
-            return updateResults.filter(r => !r.error).length
-          } catch (error) {
-            console.error('Batch error:', error)
-            return 0
-          }
-        })
-      )
-
-      updatedCount += results.reduce((a, b) => a + b, 0)
+      const updateResults = await Promise.all(updates)
+      updatedCount = updateResults.filter(r => !r.error).length
+    } catch (error) {
+      console.error('Batch error:', error)
+      return NextResponse.json({ error: 'AI processing failed' }, { status: 500 })
     }
+
+    const remaining = totalUnnormalized - updatedCount
 
     return NextResponse.json({
       success: true,
       message: `Normalized ${updatedCount} items`,
       processed: updatedCount,
-      remaining: items.length - updatedCount,
+      remaining: remaining,
     })
   } catch (error) {
     console.error('Backfill error:', error)
