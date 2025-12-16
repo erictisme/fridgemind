@@ -6,9 +6,7 @@ interface ReceiptItem {
   category: string
   quantity: number
   created_at: string
-  receipt: {
-    receipt_date: string
-  }
+  receipt_id: string
 }
 
 interface ItemAggregate {
@@ -30,24 +28,20 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all receipt items with their receipt dates
+    // Fetch all receipt items
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: receiptItems, error: itemsError } = await (supabase as any)
       .from('receipt_items')
-      .select(`
-        item_name,
-        category,
-        quantity,
-        created_at,
-        receipt:receipts!inner(receipt_date)
-      `)
+      .select('item_name, category, quantity, created_at, receipt_id')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
 
     if (itemsError) {
       console.error('Error fetching receipt items:', itemsError)
-      return NextResponse.json({ error: 'Failed to fetch receipt history' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch receipt history', details: itemsError.message }, { status: 500 })
     }
+
+    console.log('[staples/analyze] Found receipt items:', receiptItems?.length || 0)
 
     if (!receiptItems || receiptItems.length === 0) {
       return NextResponse.json({
@@ -58,31 +52,47 @@ export async function POST() {
       })
     }
 
+    // Fetch receipts to get dates
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: receipts } = await (supabase as any)
+      .from('receipts')
+      .select('id, receipt_date')
+      .eq('user_id', user.id)
+
+    const receiptDateMap = new Map<string, string>()
+    if (receipts) {
+      for (const r of receipts) {
+        receiptDateMap.set(r.id, r.receipt_date)
+      }
+    }
+
     // Aggregate items by normalized name
     const itemMap = new Map<string, ItemAggregate>()
 
     for (const item of receiptItems as ReceiptItem[]) {
+      const receiptDate = receiptDateMap.get(item.receipt_id) || item.created_at.split('T')[0]
+
       // Normalize name: lowercase, trim, remove extra spaces
       const normalizedName = item.item_name.toLowerCase().trim().replace(/\s+/g, ' ')
 
       if (itemMap.has(normalizedName)) {
         const existing = itemMap.get(normalizedName)!
         existing.purchase_count += 1
-        existing.purchase_dates.push(item.receipt.receipt_date)
-        if (item.receipt.receipt_date > existing.last_purchased_at) {
-          existing.last_purchased_at = item.receipt.receipt_date
+        existing.purchase_dates.push(receiptDate)
+        if (receiptDate > existing.last_purchased_at) {
+          existing.last_purchased_at = receiptDate
         }
-        if (item.receipt.receipt_date < existing.first_purchased_at) {
-          existing.first_purchased_at = item.receipt.receipt_date
+        if (receiptDate < existing.first_purchased_at) {
+          existing.first_purchased_at = receiptDate
         }
       } else {
         itemMap.set(normalizedName, {
           name: item.item_name, // Keep original casing from first occurrence
           category: item.category,
           purchase_count: 1,
-          first_purchased_at: item.receipt.receipt_date,
-          last_purchased_at: item.receipt.receipt_date,
-          purchase_dates: [item.receipt.receipt_date],
+          first_purchased_at: receiptDate,
+          last_purchased_at: receiptDate,
+          purchase_dates: [receiptDate],
         })
       }
     }
@@ -125,19 +135,49 @@ export async function POST() {
       }
     })
 
-    // Upsert staples (update if exists, insert if new)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: upsertError } = await (supabase as any)
-      .from('user_staples')
-      .upsert(staplesData, {
-        onConflict: 'user_id,name',
-        ignoreDuplicates: false,
-      })
+    // Insert staples one by one with conflict handling
+    let insertedCount = 0
+    let updatedCount = 0
 
-    if (upsertError) {
-      console.error('Error upserting staples:', upsertError)
-      return NextResponse.json({ error: 'Failed to save staples' }, { status: 500 })
+    for (const staple of staplesData) {
+      // Try to find existing
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existing } = await (supabase as any)
+        .from('user_staples')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('name', staple.name)
+        .single()
+
+      if (existing) {
+        // Update existing
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('user_staples')
+          .update({
+            purchase_count: staple.purchase_count,
+            first_purchased_at: staple.first_purchased_at,
+            last_purchased_at: staple.last_purchased_at,
+            avg_purchase_frequency_days: staple.avg_purchase_frequency_days,
+            is_staple: staple.is_staple,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+        updatedCount++
+      } else {
+        // Insert new
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          .from('user_staples')
+          .insert(staple)
+
+        if (!error) {
+          insertedCount++
+        }
+      }
     }
+
+    console.log('[staples/analyze] Inserted:', insertedCount, 'Updated:', updatedCount)
 
     // Log the analysis run
     const staplesIdentified = staplesData.filter((s) => s.is_staple).length
