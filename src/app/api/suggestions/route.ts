@@ -1,8 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateMealSuggestions } from '@/lib/gemini/vision'
 
-export async function GET() {
+interface Staple {
+  name: string
+  is_staple: boolean
+  is_occasional: boolean
+}
+
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -11,12 +17,17 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch user's inventory
+    // Check for "challenge variety" mode
+    const { searchParams } = new URL(request.url)
+    const challengeVariety = searchParams.get('challenge') === 'true'
+
+    // Fetch user's inventory (exclude consumed items)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: items, error } = await (supabase as any)
       .from('inventory_items')
       .select('name, quantity, expiry_date')
       .eq('user_id', user.id)
+      .is('consumed_at', null)
       .order('expiry_date', { ascending: true })
 
     if (error) {
@@ -32,6 +43,21 @@ export async function GET() {
       })
     }
 
+    // Fetch user's staples
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: staples } = await (supabase as any)
+      .from('user_staples')
+      .select('name, is_staple, is_occasional')
+      .eq('user_id', user.id)
+
+    // Create a map of staple info for quick lookup
+    const stapleMap = new Map<string, Staple>()
+    if (staples) {
+      for (const s of staples as Staple[]) {
+        stapleMap.set(s.name.toLowerCase(), s)
+      }
+    }
+
     // Get user's taste profile for preferences
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: profile } = await (supabase as any)
@@ -41,29 +67,44 @@ export async function GET() {
       .single()
 
     // Build preferences string from profile
-    let preferences = ''
+    const prefParts: string[] = []
     if (profile) {
-      const parts = []
-      if (profile.skill_level) parts.push(`Skill level: ${profile.skill_level}`)
-      if (profile.cooking_time_preference) parts.push(`Time preference: ${profile.cooking_time_preference}`)
-      if (profile.spice_tolerance) parts.push(`Spice tolerance: ${profile.spice_tolerance}`)
+      if (profile.skill_level) prefParts.push(`Skill level: ${profile.skill_level}`)
+      if (profile.cooking_time_preference) prefParts.push(`Time preference: ${profile.cooking_time_preference}`)
+      if (profile.spice_tolerance) prefParts.push(`Spice tolerance: ${profile.spice_tolerance}`)
       if (profile.dietary_restrictions?.length > 0) {
-        parts.push(`Dietary restrictions: ${profile.dietary_restrictions.join(', ')}`)
+        prefParts.push(`Dietary restrictions: ${profile.dietary_restrictions.join(', ')}`)
       }
       if (profile.cuisine_preferences?.length > 0) {
         const cuisines = profile.cuisine_preferences.map((c: { cuisine: string }) => c.cuisine).join(', ')
-        parts.push(`Preferred cuisines: ${cuisines}`)
+        prefParts.push(`Preferred cuisines: ${cuisines}`)
       }
-      preferences = parts.join('. ')
     }
 
+    // Add staples context to preferences
+    const stapleItems = staples?.filter((s: Staple) => s.is_staple).map((s: Staple) => s.name) || []
+    const occasionalItems = staples?.filter((s: Staple) => s.is_occasional).map((s: Staple) => s.name) || []
+
+    if (stapleItems.length > 0) {
+      prefParts.push(`User's staple items (always available): ${stapleItems.slice(0, 10).join(', ')}`)
+    }
+
+    if (challengeVariety && occasionalItems.length > 0) {
+      prefParts.push(`CHALLENGE MODE: Try to suggest meals that use different ingredients than their usual staples. Encourage variety and new flavors!`)
+      prefParts.push(`Items they could try using more creatively: ${occasionalItems.slice(0, 5).join(', ')}`)
+    }
+
+    const preferences = prefParts.length > 0 ? prefParts.join('. ') : undefined
+
     // Generate suggestions with Gemini
-    const suggestions = await generateMealSuggestions(items, preferences || undefined)
+    const suggestions = await generateMealSuggestions(items, preferences)
 
     return NextResponse.json({
       success: true,
       suggestions,
       inventory_count: items.length,
+      challenge_mode: challengeVariety,
+      staples_count: stapleItems.length,
     })
   } catch (error) {
     console.error('Suggestions error:', error)

@@ -26,11 +26,12 @@ export default async function DashboardLayout({
               </Link>
               <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
                 <NavLink href="/dashboard">Dashboard</NavLink>
+                <NavLink href="/dashboard/inspire">Inspire</NavLink>
                 <NavLink href="/dashboard/inventory">Inventory</NavLink>
                 <NavLink href="/dashboard/scan">Scan</NavLink>
-                <NavLink href="/dashboard/meal-plan">Meal Plan</NavLink>
-                <NavLink href="/dashboard/shopping-list">Shopping List</NavLink>
+                <NavLink href="/dashboard/shopping-list">Shop</NavLink>
                 <NavLink href="/dashboard/groceries">History</NavLink>
+                <NavLink href="/dashboard/staples">Staples</NavLink>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -45,11 +46,12 @@ export default async function DashboardLayout({
       <div className="sm:hidden bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex space-x-2 overflow-x-auto">
           <MobileNavLink href="/dashboard">Home</MobileNavLink>
+          <MobileNavLink href="/dashboard/inspire">Inspire</MobileNavLink>
           <MobileNavLink href="/dashboard/inventory">Inventory</MobileNavLink>
           <MobileNavLink href="/dashboard/scan">Scan</MobileNavLink>
-          <MobileNavLink href="/dashboard/meal-plan">Meals</MobileNavLink>
           <MobileNavLink href="/dashboard/shopping-list">Shop</MobileNavLink>
           <MobileNavLink href="/dashboard/groceries">History</MobileNavLink>
+          <MobileNavLink href="/dashboard/staples">Staples</MobileNavLink>
         </div>
       </div>
 

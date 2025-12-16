@@ -16,6 +16,11 @@ interface MealSuggestionResult {
   already_have: string[]
 }
 
+interface Alternative {
+  name: string
+  reason: string
+}
+
 interface ShoppingListItem {
   id: string
   list_id: string
@@ -70,6 +75,15 @@ export default function ShoppingListPage() {
   const [mealInput, setMealInput] = useState('')
   const [mealLoading, setMealLoading] = useState(false)
   const [mealResult, setMealResult] = useState<MealSuggestionResult | null>(null)
+
+  // Quick add (text dump) state
+  const [quickAddText, setQuickAddText] = useState('')
+  const [quickAddLoading, setQuickAddLoading] = useState(false)
+
+  // "Couldn't find" alternatives state
+  const [alternativesItem, setAlternativesItem] = useState<ShoppingListItem | null>(null)
+  const [alternatives, setAlternatives] = useState<Alternative[]>([])
+  const [alternativesLoading, setAlternativesLoading] = useState(false)
 
   useEffect(() => {
     fetchShoppingList()
@@ -256,6 +270,109 @@ export default function ShoppingListPage() {
     }
   }
 
+  // Quick add (text dump) handler
+  const handleQuickAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!quickAddText.trim()) return
+
+    setQuickAddLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/shopping-list/smart-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: quickAddText.trim() }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to parse items')
+      }
+
+      // Refresh list to show new items
+      await fetchShoppingList()
+
+      // Clear input
+      setQuickAddText('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add items')
+    } finally {
+      setQuickAddLoading(false)
+    }
+  }
+
+  // "Couldn't find" - get alternatives
+  const handleCouldntFind = async (item: ShoppingListItem) => {
+    setAlternativesItem(item)
+    setAlternatives([])
+    setAlternativesLoading(true)
+
+    try {
+      const response = await fetch('/api/shopping-list/suggest-alternative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_name: item.name }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to get alternatives')
+      }
+
+      const data = await response.json()
+      setAlternatives(data.alternatives || [])
+    } catch (err) {
+      console.error('Failed to get alternatives:', err)
+      setError('Failed to suggest alternatives')
+      setAlternativesItem(null)
+    } finally {
+      setAlternativesLoading(false)
+    }
+  }
+
+  // Replace item with alternative
+  const handleUseAlternative = async (alternative: Alternative) => {
+    if (!alternativesItem) return
+
+    setSaving(true)
+    try {
+      // Update the item name to the alternative
+      const response = await fetch('/api/shopping-list', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: alternativesItem.id,
+          name: alternative.name,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to update item')
+
+      // Update local state
+      setItems(items.map(i =>
+        i.id === alternativesItem.id
+          ? { ...i, name: alternative.name }
+          : i
+      ))
+
+      // Close modal
+      setAlternativesItem(null)
+      setAlternatives([])
+    } catch {
+      setError('Failed to update item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Skip item (remove from list)
+  const handleSkipItem = async () => {
+    if (!alternativesItem) return
+    await handleDeleteItem(alternativesItem.id)
+    setAlternativesItem(null)
+    setAlternatives([])
+  }
+
   // Group items by category
   const groupedItems = items.reduce((acc, item) => {
     const category = item.category || 'other'
@@ -419,9 +536,50 @@ export default function ShoppingListPage() {
         )}
       </div>
 
+      {/* Quick Add - Text Dump */}
+      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 p-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+          <span className="text-xl">📝</span>
+          Quick Add
+        </h2>
+        <p className="text-sm text-gray-600 mb-3">
+          Paste or type multiple items and we&apos;ll organize them for you.
+        </p>
+
+        <form onSubmit={handleQuickAdd} className="space-y-3">
+          <textarea
+            value={quickAddText}
+            onChange={(e) => setQuickAddText(e.target.value)}
+            placeholder="e.g., 2 pumpkin, broccoli, tofu, eggs x12, 500g chicken breast, milk..."
+            rows={3}
+            className="w-full px-4 py-3 border border-blue-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white resize-none"
+            disabled={quickAddLoading}
+          />
+          <button
+            type="submit"
+            disabled={!quickAddText.trim() || quickAddLoading}
+            className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {quickAddLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                Parsing items...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Items
+              </>
+            )}
+          </button>
+        </form>
+      </div>
+
       {/* Add Item Form */}
       <div className="bg-white rounded-xl border-2 border-emerald-200 p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Add Item</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">Add Single Item</h2>
         <form onSubmit={handleAddItem} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Item Name */}
@@ -569,6 +727,17 @@ export default function ShoppingListPage() {
                       )}
                     </div>
 
+                    {/* Couldn't Find Button (only for unchecked items) */}
+                    {!item.is_checked && (
+                      <button
+                        onClick={() => handleCouldntFind(item)}
+                        className="flex-shrink-0 px-2 py-1 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors"
+                        title="Couldn't find this item"
+                      >
+                        Not found?
+                      </button>
+                    )}
+
                     {/* Delete Button */}
                     <button
                       onClick={() => handleDeleteItem(item.id)}
@@ -584,6 +753,79 @@ export default function ShoppingListPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Alternatives Modal */}
+      {alternativesItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:w-96 sm:rounded-xl rounded-t-xl max-h-[80vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">
+                Can&apos;t find {alternativesItem.name}?
+              </h3>
+              <button
+                onClick={() => {
+                  setAlternativesItem(null)
+                  setAlternatives([])
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4">
+              {alternativesLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin mx-auto mb-3"></div>
+                  <p className="text-gray-500">Finding alternatives...</p>
+                </div>
+              ) : alternatives.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 mb-4">
+                    Here are some substitutes you could use instead:
+                  </p>
+
+                  {alternatives.map((alt, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleUseAlternative(alt)}
+                      disabled={saving}
+                      className="w-full p-3 text-left bg-gray-50 hover:bg-emerald-50 rounded-lg border border-gray-200 hover:border-emerald-300 transition-colors disabled:opacity-50"
+                    >
+                      <p className="font-medium text-gray-900">{alt.name}</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{alt.reason}</p>
+                    </button>
+                  ))}
+
+                  <div className="border-t border-gray-200 pt-3 mt-4">
+                    <button
+                      onClick={handleSkipItem}
+                      disabled={saving}
+                      className="w-full p-3 text-center text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      Skip this ingredient
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No alternatives found.</p>
+                  <button
+                    onClick={handleSkipItem}
+                    className="mt-4 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    Skip this ingredient
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

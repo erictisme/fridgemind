@@ -466,6 +466,284 @@ export interface Database {
           created_at?: string
         }
       }
+      saved_recipes: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          source_type: string
+          source_url: string | null
+          source_account: string | null
+          image_url: string | null
+          ingredients: Json
+          instructions: string | null
+          estimated_time_minutes: number | null
+          servings: number
+          cuisine_type: string | null
+          tags: Json
+          is_favorite: boolean
+          times_cooked: number
+          last_cooked_at: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          source_type: string
+          source_url?: string | null
+          source_account?: string | null
+          image_url?: string | null
+          ingredients?: Json
+          instructions?: string | null
+          estimated_time_minutes?: number | null
+          servings?: number
+          cuisine_type?: string | null
+          tags?: Json
+          is_favorite?: boolean
+          times_cooked?: number
+          last_cooked_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          source_type?: string
+          source_url?: string | null
+          source_account?: string | null
+          image_url?: string | null
+          ingredients?: Json
+          instructions?: string | null
+          estimated_time_minutes?: number | null
+          servings?: number
+          cuisine_type?: string | null
+          tags?: Json
+          is_favorite?: boolean
+          times_cooked?: number
+          last_cooked_at?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      followed_recipe_accounts: {
+        Row: {
+          id: string
+          user_id: string
+          platform: string
+          account_handle: string
+          account_name: string | null
+          profile_image_url: string | null
+          last_fetched_at: string | null
+          fetch_frequency_hours: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          platform?: string
+          account_handle: string
+          account_name?: string | null
+          profile_image_url?: string | null
+          last_fetched_at?: string | null
+          fetch_frequency_hours?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          platform?: string
+          account_handle?: string
+          account_name?: string | null
+          profile_image_url?: string | null
+          last_fetched_at?: string | null
+          fetch_frequency_hours?: number
+          is_active?: boolean
+          created_at?: string
+        }
+      }
+      fetched_recipe_posts: {
+        Row: {
+          id: string
+          account_id: string
+          platform_post_id: string
+          post_url: string
+          image_urls: Json
+          caption: string | null
+          posted_at: string | null
+          is_recipe: boolean | null
+          parsed_recipe: Json | null
+          fetched_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          platform_post_id: string
+          post_url: string
+          image_urls?: Json
+          caption?: string | null
+          posted_at?: string | null
+          is_recipe?: boolean | null
+          parsed_recipe?: Json | null
+          fetched_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          platform_post_id?: string
+          post_url?: string
+          image_urls?: Json
+          caption?: string | null
+          posted_at?: string | null
+          is_recipe?: boolean | null
+          parsed_recipe?: Json | null
+          fetched_at?: string
+        }
+      }
+      frequently_bought_items: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          category: string | null
+          default_quantity: number
+          default_unit: string
+          purchase_count: number
+          last_purchased_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          category?: string | null
+          default_quantity?: number
+          default_unit?: string
+          purchase_count?: number
+          last_purchased_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          category?: string | null
+          default_quantity?: number
+          default_unit?: string
+          purchase_count?: number
+          last_purchased_at?: string
+          created_at?: string
+        }
+      }
+      user_activity_log: {
+        Row: {
+          id: string
+          user_id: string
+          action_type: string
+          action_data: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          action_type: string
+          action_data?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          action_type?: string
+          action_data?: Json | null
+          created_at?: string
+        }
+      }
+      user_staples: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          category: string | null
+          purchase_count: number
+          first_purchased_at: string | null
+          last_purchased_at: string | null
+          avg_purchase_frequency_days: number | null
+          is_staple: boolean
+          is_occasional: boolean
+          never_suggest_alternative: boolean
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          category?: string | null
+          purchase_count?: number
+          first_purchased_at?: string | null
+          last_purchased_at?: string | null
+          avg_purchase_frequency_days?: number | null
+          is_staple?: boolean
+          is_occasional?: boolean
+          never_suggest_alternative?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          category?: string | null
+          purchase_count?: number
+          first_purchased_at?: string | null
+          last_purchased_at?: string | null
+          avg_purchase_frequency_days?: number | null
+          is_staple?: boolean
+          is_occasional?: boolean
+          never_suggest_alternative?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      receipt_analysis_runs: {
+        Row: {
+          id: string
+          user_id: string
+          receipts_analyzed: number
+          items_found: number
+          staples_identified: number
+          run_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          receipts_analyzed?: number
+          items_found?: number
+          staples_identified?: number
+          run_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          receipts_analyzed?: number
+          items_found?: number
+          staples_identified?: number
+          run_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -496,6 +774,13 @@ export type TasteProfile = Tables<'taste_profiles'>
 export type CookedMeal = Tables<'cooked_meals'>
 export type MealSuggestion = Tables<'meal_suggestions'>
 export type EatingOutLog = Tables<'eating_out_logs'>
+export type SavedRecipe = Tables<'saved_recipes'>
+export type FollowedRecipeAccount = Tables<'followed_recipe_accounts'>
+export type FetchedRecipePost = Tables<'fetched_recipe_posts'>
+export type FrequentlyBoughtItem = Tables<'frequently_bought_items'>
+export type UserActivityLog = Tables<'user_activity_log'>
+export type UserStaple = Tables<'user_staples'>
+export type ReceiptAnalysisRun = Tables<'receipt_analysis_runs'>
 
 // Storage category options
 export const STORAGE_CATEGORIES = [
@@ -561,3 +846,26 @@ export const HEALTH_ASSESSMENTS = [
   'balanced', 'protein_heavy', 'carb_heavy', 'high_fat', 'vegetable_rich', 'light'
 ] as const
 export type HealthAssessment = typeof HEALTH_ASSESSMENTS[number]
+
+// Recipe source types
+export const RECIPE_SOURCE_TYPES = ['instagram', 'manual', 'ai_suggestion', 'url'] as const
+export type RecipeSourceType = typeof RECIPE_SOURCE_TYPES[number]
+
+// Recipe ingredient type
+export interface RecipeIngredient {
+  name: string
+  quantity?: number | string
+  unit?: string
+  optional?: boolean
+}
+
+// Shopping list item types
+export const SHOPPING_ITEM_TYPES = ['food', 'household'] as const
+export type ShoppingItemType = typeof SHOPPING_ITEM_TYPES[number]
+
+// Activity log action types
+export const ACTIVITY_TYPES = [
+  'scan', 'log_meal', 'add_shopping', 'upload_receipt', 'cook_recipe',
+  'save_recipe', 'view_suggestions'
+] as const
+export type ActivityType = typeof ACTIVITY_TYPES[number]

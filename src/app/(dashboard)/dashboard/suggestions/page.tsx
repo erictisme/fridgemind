@@ -30,12 +30,14 @@ export default function SuggestionsPage() {
   const [inventoryCount, setInventoryCount] = useState(0)
   const [addingToList, setAddingToList] = useState<number | null>(null)
   const [addedSuccess, setAddedSuccess] = useState<number | null>(null)
+  const [challengeMode, setChallengeMode] = useState(false)
 
   useEffect(() => {
     fetchSuggestions()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fetchSuggestions = async (isRefresh = false) => {
+  const fetchSuggestions = async (isRefresh = false, challenge = challengeMode) => {
     if (isRefresh) {
       setRefreshing(true)
     } else {
@@ -44,7 +46,8 @@ export default function SuggestionsPage() {
     setError(null)
 
     try {
-      const response = await fetch('/api/suggestions')
+      const url = challenge ? '/api/suggestions?challenge=true' : '/api/suggestions'
+      const response = await fetch(url)
       if (!response.ok) {
         throw new Error('Failed to fetch suggestions')
       }
@@ -59,6 +62,12 @@ export default function SuggestionsPage() {
       setLoading(false)
       setRefreshing(false)
     }
+  }
+
+  const toggleChallengeMode = () => {
+    const newMode = !challengeMode
+    setChallengeMode(newMode)
+    fetchSuggestions(true, newMode)
   }
 
   const toggleExpand = (index: number) => {
@@ -107,27 +116,52 @@ export default function SuggestionsPage() {
           <h1 className="text-2xl font-bold text-gray-900 mt-1">What to Cook</h1>
           <p className="text-gray-500">AI meal ideas from your inventory</p>
         </div>
-        <button
-          onClick={() => fetchSuggestions(true)}
-          disabled={refreshing || loading}
-          className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
-          title="Refresh suggestions"
-        >
-          <svg
-            className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleChallengeMode}
+            disabled={refreshing || loading}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              challengeMode
+                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Challenge mode: try new ingredients!"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
+            {challengeMode ? '🎲 Variety Mode' : '🎲 Try New'}
+          </button>
+          <button
+            onClick={() => fetchSuggestions(true)}
+            disabled={refreshing || loading}
+            className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            title="Refresh suggestions"
+          >
+            <svg
+              className={`w-5 h-5 text-gray-600 ${refreshing ? 'animate-spin' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* Challenge Mode Banner */}
+      {challengeMode && !loading && (
+        <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-xl flex items-start gap-3">
+          <span className="text-xl">🎲</span>
+          <div>
+            <p className="font-medium text-purple-800">Variety Mode Active</p>
+            <p className="text-sm text-purple-700">Suggestions will encourage you to try new ingredients beyond your usual staples</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-xl">

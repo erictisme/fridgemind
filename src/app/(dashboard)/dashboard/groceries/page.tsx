@@ -76,6 +76,16 @@ export default function HistoryPage() {
   const [addingToInventory, setAddingToInventory] = useState(false)
   const [inventorySuccess, setInventorySuccess] = useState<string | null>(null)
 
+  // Bulk upload state
+  const [bulkProgress, setBulkProgress] = useState<{
+    total: number
+    current: number
+    successful: number
+    duplicates: number
+    failed: number
+    currentFile: string
+  } | null>(null)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -107,45 +117,102 @@ export default function HistoryPage() {
     setLastParsedReceipt(null)
     setInventorySuccess(null)
 
-    // Only process first file for now (simpler UX)
-    const file = files[0]
+    const fileArray = Array.from(files)
 
-    try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+    // Single file - original behavior
+    if (fileArray.length === 1) {
+      const file = fileArray[0]
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
 
-      const res = await fetch('/api/receipts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          file_data: base64,
-          file_type: file.type,
-          file_name: file.name,
-        }),
-      })
+        const res = await fetch('/api/receipts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_data: base64,
+            file_type: file.type,
+            file_name: file.name,
+          }),
+        })
 
-      const data = await res.json()
+        const data = await res.json()
 
-      if (res.ok) {
-        // Store parsed receipt for inventory flow
-        console.log('[groceries] Receipt parsed successfully:', data.parsed)
-        console.log('[groceries] Items:', data.parsed?.items)
-        setLastParsedReceipt(data.parsed)
-        fetchData() // Refresh receipts list
-      } else if (data.duplicate) {
-        alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
-      } else {
-        alert(data.error || 'Failed to process receipt')
+        if (res.ok) {
+          console.log('[groceries] Receipt parsed successfully:', data.parsed)
+          setLastParsedReceipt(data.parsed)
+          fetchData()
+        } else if (data.duplicate) {
+          alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
+        } else {
+          alert(data.error || 'Failed to process receipt')
+        }
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Error processing file')
       }
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Error processing file')
+      setUploading(false)
+      return
+    }
+
+    // Multiple files - bulk upload mode
+    setBulkProgress({
+      total: fileArray.length,
+      current: 0,
+      successful: 0,
+      duplicates: 0,
+      failed: 0,
+      currentFile: '',
+    })
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i]
+      setBulkProgress(prev => prev ? {
+        ...prev,
+        current: i + 1,
+        currentFile: file.name,
+      } : null)
+
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+
+        const res = await fetch('/api/receipts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_data: base64,
+            file_type: file.type,
+            file_name: file.name,
+          }),
+        })
+
+        const data = await res.json()
+
+        if (res.ok) {
+          setBulkProgress(prev => prev ? { ...prev, successful: prev.successful + 1 } : null)
+        } else if (data.duplicate) {
+          setBulkProgress(prev => prev ? { ...prev, duplicates: prev.duplicates + 1 } : null)
+        } else {
+          setBulkProgress(prev => prev ? { ...prev, failed: prev.failed + 1 } : null)
+        }
+      } catch {
+        setBulkProgress(prev => prev ? { ...prev, failed: prev.failed + 1 } : null)
+      }
+
+      // Small delay to avoid overwhelming the API
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     setUploading(false)
+    fetchData()
   }
 
   const handleAddToInventory = async () => {
@@ -384,20 +451,76 @@ export default function HistoryPage() {
             </div>
           )}
 
+          {/* Bulk Progress */}
+          {bulkProgress && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">
+                  Bulk Import Progress
+                </h3>
+                <span className="text-sm text-gray-500">
+                  {bulkProgress.current} / {bulkProgress.total}
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="bg-emerald-500 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                />
+              </div>
+
+              {/* Current file */}
+              {uploading && (
+                <p className="text-sm text-gray-500 truncate">
+                  Processing: {bulkProgress.currentFile}
+                </p>
+              )}
+
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="bg-emerald-50 rounded-lg p-3">
+                  <div className="text-xl font-bold text-emerald-600">{bulkProgress.successful}</div>
+                  <div className="text-xs text-emerald-700">Imported</div>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3">
+                  <div className="text-xl font-bold text-amber-600">{bulkProgress.duplicates}</div>
+                  <div className="text-xs text-amber-700">Duplicates</div>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3">
+                  <div className="text-xl font-bold text-red-600">{bulkProgress.failed}</div>
+                  <div className="text-xs text-red-700">Failed</div>
+                </div>
+              </div>
+
+              {/* Done button */}
+              {!uploading && (
+                <button
+                  onClick={() => setBulkProgress(null)}
+                  className="w-full py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
+                >
+                  Done - View Receipts
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Upload area */}
-          {!lastParsedReceipt && (
+          {!lastParsedReceipt && !bulkProgress && (
             <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
               <div className="text-center">
                 <div className="text-4xl mb-4">🧾</div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Upload Receipt
+                  Upload Receipts
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  Take a photo or upload a PDF. Items can be added to your inventory.
+                  Select one or multiple PDFs/images. Duplicates are auto-detected.
                 </p>
                 <input
                   type="file"
                   accept=".pdf,image/*"
+                  multiple
                   onChange={(e) => handleFileUpload(e.target.files)}
                   className="hidden"
                   id="file-upload"
@@ -411,8 +534,11 @@ export default function HistoryPage() {
                       : 'bg-emerald-600 text-white hover:bg-emerald-700'
                   }`}
                 >
-                  {uploading ? 'Processing...' : 'Select File'}
+                  {uploading ? 'Processing...' : 'Select Files'}
                 </label>
+                <p className="text-xs text-gray-400 mt-3">
+                  Tip: Select all 57 receipts at once for bulk import
+                </p>
               </div>
             </div>
           )}
@@ -559,6 +685,31 @@ export default function HistoryPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Staples Prompt - show when user has 5+ receipts */}
+      {receipts.length >= 5 && activeTab === 'dashboard' && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center text-2xl">
+                📊
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Identify Your Staples</h3>
+                <p className="text-sm text-gray-600">
+                  You have {receipts.length} receipts. Analyze to find items you buy regularly.
+                </p>
+              </div>
+            </div>
+            <a
+              href="/dashboard/staples"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+            >
+              Analyze Now
+            </a>
+          </div>
         </div>
       )}
 
