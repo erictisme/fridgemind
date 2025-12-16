@@ -382,27 +382,16 @@ export default function HistoryPage() {
   const handleNormalize = async () => {
     setNormalizing(true)
     try {
-      // Run normalization in batches until done
-      let remaining = normStatus?.unnormalized || 0
-      while (remaining > 0) {
-        const res = await fetch('/api/receipts/backfill-normalize', { method: 'POST' })
-        const data = await res.json()
+      // Single call - API now handles all items internally with parallel processing
+      const res = await fetch('/api/receipts/backfill-normalize', { method: 'POST' })
+      const data = await res.json()
 
-        if (!res.ok) {
-          alert(data.error || 'Failed to normalize')
-          break
-        }
-
-        remaining = data.remaining
-        // Update status
-        const statusRes = await fetch('/api/receipts/backfill-normalize')
-        if (statusRes.ok) {
-          const statusData = await statusRes.json()
-          setNormStatus(statusData)
-        }
+      if (!res.ok) {
+        alert(data.error || 'Failed to normalize')
+      } else {
+        // Refresh data after normalization
+        fetchData()
       }
-      // Refresh data after normalization
-      fetchData()
     } catch (error) {
       console.error('Normalization error:', error)
     }
@@ -415,12 +404,14 @@ export default function HistoryPage() {
     try {
       const res = await fetch('/api/staples/analyze', { method: 'POST' })
       if (res.ok) {
-        fetchData()
+        await fetchData()
       } else {
-        alert('Failed to analyze receipts')
+        const data = await res.json()
+        alert(data.error || 'Failed to analyze receipts')
       }
     } catch (error) {
       console.error('Error analyzing staples:', error)
+      alert('Error analyzing staples')
     }
     setAnalyzingStaples(false)
   }
@@ -429,10 +420,25 @@ export default function HistoryPage() {
     if (!confirm('Clear all staples and re-analyze from receipts?')) return
     setAnalyzingStaples(true)
     try {
-      await fetch('/api/staples', { method: 'DELETE' })
-      await analyzeStaples()
+      // Clear staples first
+      const clearRes = await fetch('/api/staples', { method: 'DELETE' })
+      if (!clearRes.ok) {
+        alert('Failed to clear staples')
+        setAnalyzingStaples(false)
+        return
+      }
+
+      // Then analyze
+      const res = await fetch('/api/staples/analyze', { method: 'POST' })
+      if (res.ok) {
+        await fetchData()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to analyze receipts')
+      }
     } catch (error) {
       console.error('Error:', error)
+      alert('Error re-analyzing staples')
     }
     setAnalyzingStaples(false)
   }

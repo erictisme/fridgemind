@@ -33,6 +33,27 @@ Return a JSON array matching the input order:
 
 IMPORTANT: Return ONLY the JSON array, no other text.`
 
+// Process a batch of items with AI
+async function normalizeBatch(items: ReceiptItem[]): Promise<{ normalized_name: string; food_type: string }[]> {
+  const itemNames = items.map(i => i.item_name)
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const result = await model.generateContent([
+    NORMALIZE_PROMPT,
+    `\n\nItems to normalize:\n${JSON.stringify(itemNames)}`,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  const jsonMatch = text.match(/\[[\s\S]*\]/)
+  if (!jsonMatch) {
+    throw new Error('Failed to parse AI response')
+  }
+
+  return JSON.parse(jsonMatch[0])
+}
+
 export async function POST() {
   try {
     const supabase = await createClient()
@@ -42,21 +63,20 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all items without normalized_name
+    // Fetch ALL items without normalized_name
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: items, error: fetchError } = await (supabase as any)
+    const { data: allItems, error: fetchError } = await (supabase as any)
       .from('receipt_items')
       .select('id, item_name, category')
       .eq('user_id', user.id)
       .is('normalized_name', null)
-      .limit(100) // Process in batches
 
     if (fetchError) {
       console.error('Error fetching items:', fetchError)
       return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
     }
 
-    if (!items || items.length === 0) {
+    if (!allItems || allItems.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'No items need normalization',
@@ -65,72 +85,58 @@ export async function POST() {
       })
     }
 
-    // Get count of remaining items
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count: remaining } = await (supabase as any)
-      .from('receipt_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .is('normalized_name', null)
+    const items = allItems as ReceiptItem[]
+    const BATCH_SIZE = 50 // Process 50 items per AI call
+    const batches: ReceiptItem[][] = []
 
-    // Prepare items for AI
-    const itemNames = (items as ReceiptItem[]).map(i => i.item_name)
-
-    // Call Gemini to normalize
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-
-    const result = await model.generateContent([
-      NORMALIZE_PROMPT,
-      `\n\nItems to normalize:\n${JSON.stringify(itemNames)}`,
-    ])
-
-    const response = await result.response
-    const text = response.text()
-
-    // Parse response
-    const jsonMatch = text.match(/\[[\s\S]*\]/)
-    if (!jsonMatch) {
-      console.error('Failed to parse normalization response:', text)
-      return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 })
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      batches.push(items.slice(i, i + BATCH_SIZE))
     }
 
-    const normalized = JSON.parse(jsonMatch[0]) as { normalized_name: string; food_type: string }[]
-
-    if (normalized.length !== items.length) {
-      console.error('Mismatch in normalized count:', normalized.length, 'vs', items.length)
-      return NextResponse.json({ error: 'AI returned wrong number of items' }, { status: 500 })
-    }
-
-    // Update each item
+    // Process all batches in parallel (max 3 concurrent)
     let updatedCount = 0
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i] as ReceiptItem
-      const norm = normalized[i]
+    const CONCURRENT_LIMIT = 3
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: updateError } = await (supabase as any)
-        .from('receipt_items')
-        .update({
-          normalized_name: norm.normalized_name,
-          food_type: norm.food_type,
+    for (let i = 0; i < batches.length; i += CONCURRENT_LIMIT) {
+      const batchGroup = batches.slice(i, i + CONCURRENT_LIMIT)
+
+      const results = await Promise.all(
+        batchGroup.map(async (batch) => {
+          try {
+            const normalized = await normalizeBatch(batch)
+
+            // Bulk update using Promise.all
+            const updates = batch.map((item, idx) => {
+              if (normalized[idx]) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return (supabase as any)
+                  .from('receipt_items')
+                  .update({
+                    normalized_name: normalized[idx].normalized_name,
+                    food_type: normalized[idx].food_type,
+                  })
+                  .eq('id', item.id)
+              }
+              return Promise.resolve({ error: null })
+            })
+
+            const updateResults = await Promise.all(updates)
+            return updateResults.filter(r => !r.error).length
+          } catch (error) {
+            console.error('Batch error:', error)
+            return 0
+          }
         })
-        .eq('id', item.id)
+      )
 
-      if (!updateError) {
-        updatedCount++
-      }
+      updatedCount += results.reduce((a, b) => a + b, 0)
     }
 
     return NextResponse.json({
       success: true,
       message: `Normalized ${updatedCount} items`,
       processed: updatedCount,
-      remaining: (remaining || 0) - updatedCount,
-      sample: normalized.slice(0, 5).map((n, i) => ({
-        original: itemNames[i],
-        normalized: n.normalized_name,
-        food_type: n.food_type,
-      })),
+      remaining: items.length - updatedCount,
     })
   } catch (error) {
     console.error('Backfill error:', error)
