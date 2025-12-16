@@ -1,0 +1,305 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+
+interface RecipeIngredient {
+  name: string
+  quantity?: string | number
+  unit?: string
+  optional?: boolean
+}
+
+interface SavedRecipe {
+  id: string
+  name: string
+  description: string | null
+  source_type: string
+  source_url: string | null
+  source_account: string | null
+  image_url: string | null
+  ingredients: RecipeIngredient[]
+  instructions: string | null
+  estimated_time_minutes: number | null
+  servings: number
+  cuisine_type: string | null
+  tags: string[]
+  is_favorite: boolean
+  times_cooked: number
+  notes: string | null
+  created_at: string
+}
+
+export default function RecipeDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const [recipe, setRecipe] = useState<SavedRecipe | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    if (params.id) {
+      fetchRecipe(params.id as string)
+    }
+  }, [params.id])
+
+  const fetchRecipe = async (id: string) => {
+    try {
+      const response = await fetch(`/api/recipes/${id}`)
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError('Recipe not found')
+        } else {
+          throw new Error('Failed to fetch recipe')
+        }
+        return
+      }
+      const data = await response.json()
+      setRecipe(data.recipe)
+    } catch {
+      setError('Failed to load recipe')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleFavorite = async () => {
+    if (!recipe) return
+
+    try {
+      await fetch('/api/recipes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: recipe.id,
+          is_favorite: !recipe.is_favorite,
+        }),
+      })
+      setRecipe({ ...recipe, is_favorite: !recipe.is_favorite })
+    } catch {
+      setError('Failed to update recipe')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!recipe || !confirm('Delete this recipe?')) return
+
+    setDeleting(true)
+    try {
+      await fetch('/api/recipes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: recipe.id }),
+      })
+      router.push('/dashboard/inspire')
+    } catch {
+      setError('Failed to delete recipe')
+      setDeleting(false)
+    }
+  }
+
+  const handleMarkCooked = async () => {
+    if (!recipe) return
+
+    try {
+      await fetch('/api/recipes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: recipe.id,
+          times_cooked: recipe.times_cooked + 1,
+          last_cooked_at: new Date().toISOString(),
+        }),
+      })
+      setRecipe({ ...recipe, times_cooked: recipe.times_cooked + 1 })
+    } catch {
+      setError('Failed to update recipe')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
+  if (error || !recipe) {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <span className="text-4xl mb-4 block">😕</span>
+        <h1 className="text-xl font-semibold text-gray-900 mb-2">{error || 'Recipe not found'}</h1>
+        <Link
+          href="/dashboard/inspire"
+          className="text-emerald-600 hover:text-emerald-700 font-medium"
+        >
+          ← Back to Inspire
+        </Link>
+      </div>
+    )
+  }
+
+  const getSourceIcon = (sourceType: string) => {
+    switch (sourceType) {
+      case 'instagram': return '📸'
+      case 'manual': return '✍️'
+      case 'ai_suggestion': return '🤖'
+      default: return '🔗'
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto pb-20">
+      {/* Back link */}
+      <Link
+        href="/dashboard/inspire"
+        className="text-gray-500 hover:text-gray-700 text-sm mb-4 inline-block"
+      >
+        ← Back to Inspire
+      </Link>
+
+      {/* Header */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {recipe.image_url && (
+          <div className="h-48 bg-gray-100">
+            <img
+              src={recipe.image_url}
+              alt={recipe.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+
+        <div className="p-6">
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span title={recipe.source_type}>{getSourceIcon(recipe.source_type)}</span>
+                <h1 className="text-2xl font-bold text-gray-900">{recipe.name}</h1>
+              </div>
+              {recipe.description && (
+                <p className="text-gray-600">{recipe.description}</p>
+              )}
+            </div>
+            <button
+              onClick={handleToggleFavorite}
+              className={`text-2xl ${recipe.is_favorite ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}
+            >
+              {recipe.is_favorite ? '❤️' : '🤍'}
+            </button>
+          </div>
+
+          {/* Meta info */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {recipe.estimated_time_minutes && (
+              <span className="text-sm bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
+                ⏱️ {recipe.estimated_time_minutes} min
+              </span>
+            )}
+            {recipe.servings && (
+              <span className="text-sm bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
+                🍽️ {recipe.servings} servings
+              </span>
+            )}
+            {recipe.cuisine_type && (
+              <span className="text-sm bg-purple-100 text-purple-600 px-3 py-1 rounded-full">
+                {recipe.cuisine_type}
+              </span>
+            )}
+            {recipe.times_cooked > 0 && (
+              <span className="text-sm bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full">
+                Cooked {recipe.times_cooked}x
+              </span>
+            )}
+          </div>
+
+          {/* Tags */}
+          {recipe.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-6">
+              {recipe.tags.map((tag, i) => (
+                <span key={i} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Source info */}
+          {recipe.source_account && (
+            <p className="text-sm text-gray-500 mb-6">
+              From: @{recipe.source_account}
+              {recipe.source_url && (
+                <a
+                  href={recipe.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 text-purple-600 hover:text-purple-700"
+                >
+                  View original →
+                </a>
+              )}
+            </p>
+          )}
+
+          {/* Ingredients */}
+          {recipe.ingredients.length > 0 && (
+            <div className="mb-6">
+              <h2 className="font-semibold text-gray-900 mb-3">Ingredients</h2>
+              <ul className="space-y-2">
+                {recipe.ingredients.map((ing, i) => (
+                  <li key={i} className="flex items-start gap-2 text-gray-700">
+                    <span className="text-emerald-500 mt-0.5">•</span>
+                    <span>
+                      {ing.quantity && <span className="font-medium">{ing.quantity} </span>}
+                      {ing.unit && <span>{ing.unit} </span>}
+                      {ing.name}
+                      {ing.optional && <span className="text-gray-400 text-sm"> (optional)</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Instructions */}
+          {recipe.instructions && (
+            <div className="mb-6">
+              <h2 className="font-semibold text-gray-900 mb-3">Instructions</h2>
+              <div className="text-gray-700 whitespace-pre-line">{recipe.instructions}</div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {recipe.notes && (
+            <div className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+              <h2 className="font-semibold text-amber-800 mb-2">Notes</h2>
+              <p className="text-amber-700 text-sm">{recipe.notes}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-4 border-t border-gray-100">
+            <button
+              onClick={handleMarkCooked}
+              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 flex items-center justify-center gap-2"
+            >
+              <span>🍳</span>
+              I Made This
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg font-medium disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

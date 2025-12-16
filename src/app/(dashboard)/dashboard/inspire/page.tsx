@@ -870,9 +870,10 @@ export default function InspirePage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {recipes.map(recipe => (
-                  <div
+                  <Link
                     key={recipe.id}
-                    className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:border-purple-300 transition-colors"
+                    href={`/dashboard/inspire/${recipe.id}`}
+                    className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:border-purple-300 hover:shadow-md transition-all cursor-pointer block"
                   >
                     {recipe.image_url && (
                       <div className="h-32 bg-gray-100">
@@ -895,7 +896,7 @@ export default function InspirePage() {
                           )}
                         </div>
                         <button
-                          onClick={() => handleToggleFavorite(recipe)}
+                          onClick={(e) => { e.preventDefault(); handleToggleFavorite(recipe) }}
                           className={`text-xl ${recipe.is_favorite ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}
                         >
                           {recipe.is_favorite ? '❤️' : '🤍'}
@@ -920,22 +921,16 @@ export default function InspirePage() {
                         )}
                       </div>
 
-                      <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-100">
-                        <Link
-                          href={`/dashboard/inspire/${recipe.id}`}
-                          className="text-sm text-purple-600 hover:text-purple-700 font-medium"
-                        >
-                          View Recipe
-                        </Link>
+                      <div className="flex justify-end items-center mt-4 pt-3 border-t border-gray-100">
                         <button
-                          onClick={() => handleDeleteRecipe(recipe.id)}
+                          onClick={(e) => { e.preventDefault(); handleDeleteRecipe(recipe.id) }}
                           className="text-sm text-gray-400 hover:text-red-600"
                         >
                           Delete
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
