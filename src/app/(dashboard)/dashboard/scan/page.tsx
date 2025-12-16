@@ -70,6 +70,8 @@ export default function ScanPage() {
   const [converting, setConverting] = useState(false)
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
   const [estimatingExpiry, setEstimatingExpiry] = useState<number | null>(null)
+  const [scanMode, setScanMode] = useState<'add' | 'replace'>('add')
+  const [existingItemCount, setExistingItemCount] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const estimateAbortRef = useRef<AbortController | null>(null)
   const router = useRouter()
@@ -201,6 +203,7 @@ export default function ScanPage() {
       const inventoryResponse = await fetch(`/api/inventory?location=${location}`)
       const inventoryData = await inventoryResponse.json()
       const existingItems: ExistingInventoryItem[] = inventoryData.items || []
+      setExistingItemCount(existingItems.length)
 
       // Step 3: Build normalized name map of detected items
       const detectedNames = new Set(
@@ -329,6 +332,14 @@ export default function ScanPage() {
   const handleSave = async () => {
     const selectedItems = detectedItems.filter(item => item.selected)
 
+    // Double-confirm for replace mode
+    if (scanMode === 'replace' && existingItemCount > 0) {
+      const confirmed = window.confirm(
+        `WARNING: This will permanently delete ALL ${existingItemCount} items in your ${location} and replace them with ${selectedItems.filter(i => i.quantity > 0).length} new items.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure?`
+      )
+      if (!confirmed) return
+    }
+
     setSaving(true)
     setError(null)
 
@@ -339,7 +350,7 @@ export default function ScanPage() {
         body: JSON.stringify({
           items: selectedItems,
           location: location,
-          syncMode: true,  // Enable smart sync
+          syncMode: scanMode === 'replace',  // true = replace all, false = add/merge
         }),
       })
 
@@ -786,6 +797,60 @@ export default function ScanPage() {
             </div>
           )}
 
+          {/* Mode Toggle */}
+          <div className="border-t border-gray-200 pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">
+                {existingItemCount > 0
+                  ? `${existingItemCount} existing items in ${location}`
+                  : `No existing items in ${location}`
+                }
+              </span>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setScanMode('add')}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  scanMode === 'add'
+                    ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500'
+                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                }`}
+              >
+                + Add to existing
+              </button>
+              <button
+                onClick={() => setScanMode('replace')}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  scanMode === 'replace'
+                    ? 'bg-red-100 text-red-700 border-2 border-red-500'
+                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                }`}
+              >
+                Replace all
+              </button>
+            </div>
+
+            {/* Warning for replace mode */}
+            {scanMode === 'replace' && existingItemCount > 0 && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-red-600 text-lg">⚠️</span>
+                  <div>
+                    <p className="text-red-800 font-semibold text-sm">Danger: Replace Mode</p>
+                    <p className="text-red-700 text-xs mt-1">
+                      This will <span className="font-bold">permanently delete ALL {existingItemCount} items</span> currently
+                      in your {location} and replace them with the {itemsToKeep} scanned items.
+                    </p>
+                    <p className="text-red-600 text-xs mt-1 font-semibold">
+                      This action CANNOT be undone!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Save button */}
           <div className="flex gap-4">
             <button
@@ -793,6 +858,7 @@ export default function ScanPage() {
                 setImages([])
                 setDetectedItems([])
                 setStep('location')
+                setScanMode('add')
               }}
               className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
@@ -801,12 +867,18 @@ export default function ScanPage() {
             <button
               onClick={handleSave}
               disabled={saving || detectedItems.filter(i => i.selected).length === 0}
-              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex-1 px-4 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                scanMode === 'replace'
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              }`}
             >
-              {saving ? 'Saving...' : (
-                <>
-                  Save ({itemsToKeep} keep{itemsToRemove > 0 ? `, ${itemsToRemove} remove` : ''})
-                </>
+              {saving ? (scanMode === 'replace' ? 'Replacing...' : 'Saving...') : (
+                scanMode === 'replace' ? (
+                  `⚠️ Replace with ${itemsToKeep} items`
+                ) : (
+                  `Save (${itemsToKeep} keep${itemsToRemove > 0 ? `, ${itemsToRemove} remove` : ''})`
+                )
               )}
             </button>
           </div>

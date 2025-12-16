@@ -140,6 +140,7 @@ export default function InventoryPage() {
   }>>([])
   const [parsing, setParsing] = useState(false)
   const [pasteStep, setPasteStep] = useState<'input' | 'review'>('input')
+  const [pasteMode, setPasteMode] = useState<'add' | 'replace'>('add')
 
   useEffect(() => {
     fetchInventory()
@@ -329,6 +330,17 @@ export default function InventoryPage() {
     const selectedItems = parsedItems.filter(item => item.selected)
     if (selectedItems.length === 0) return
 
+    // Double-confirm for replace mode
+    if (pasteMode === 'replace') {
+      const locationCount = items.filter(i => i.location === pasteLocation).length
+      if (locationCount > 0) {
+        const confirmed = window.confirm(
+          `WARNING: This will permanently delete ALL ${locationCount} items in your ${pasteLocation} and replace them with ${selectedItems.length} new items.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure?`
+        )
+        if (!confirmed) return
+      }
+    }
+
     setSaving(true)
     try {
       const today = new Date().toISOString().split('T')[0]
@@ -350,6 +362,7 @@ export default function InventoryPage() {
         body: JSON.stringify({
           items: itemsToAdd,
           location: pasteLocation,
+          syncMode: pasteMode === 'replace', // true = replace all in location
         }),
       })
 
@@ -369,6 +382,7 @@ export default function InventoryPage() {
     setParsedItems([])
     setPasteStep('input')
     setPasteLocation('fridge')
+    setPasteMode('add')
   }
 
   const toggleParsedItem = (index: number) => {
@@ -998,23 +1012,77 @@ Broccoli (350g) x 1
                     ))}
                   </div>
 
-                  <div className="pt-2 border-t border-gray-200">
-                    <p className="text-sm text-gray-600 mb-2">
-                      Adding to: <span className="font-medium">{pasteLocation}</span>
-                    </p>
+                  {/* Mode Toggle */}
+                  <div className="pt-2 border-t border-gray-200 space-y-3">
+                    <div>
+                      <p className="text-sm text-gray-600 mb-2">
+                        Adding to: <span className="font-medium">{pasteLocation}</span>
+                        {items.filter(i => i.location === pasteLocation).length > 0 && (
+                          <span className="text-gray-400"> ({items.filter(i => i.location === pasteLocation).length} existing items)</span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPasteMode('add')}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          pasteMode === 'add'
+                            ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500'
+                            : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                        }`}
+                      >
+                        + Add to existing
+                      </button>
+                      <button
+                        onClick={() => setPasteMode('replace')}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          pasteMode === 'replace'
+                            ? 'bg-red-100 text-red-700 border-2 border-red-500'
+                            : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                        }`}
+                      >
+                        Replace all
+                      </button>
+                    </div>
+
+                    {/* Warning for replace mode */}
+                    {pasteMode === 'replace' && (
+                      <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <span className="text-red-600 text-lg">⚠️</span>
+                          <div>
+                            <p className="text-red-800 font-semibold text-sm">Danger: Replace Mode</p>
+                            <p className="text-red-700 text-xs mt-1">
+                              This will <span className="font-bold">permanently delete ALL {items.filter(i => i.location === pasteLocation).length} items</span> currently
+                              in your {pasteLocation} and replace them with the {parsedItems.filter(i => i.selected).length} selected items.
+                            </p>
+                            <p className="text-red-600 text-xs mt-1 font-semibold">
+                              This action CANNOT be undone!
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
                     <button
                       onClick={handleAddParsedItems}
                       disabled={saving || parsedItems.filter(i => i.selected).length === 0}
-                      className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2 ${
+                        pasteMode === 'replace'
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      }`}
                     >
                       {saving ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          Adding...
+                          {pasteMode === 'replace' ? 'Replacing...' : 'Adding...'}
                         </>
+                      ) : pasteMode === 'replace' ? (
+                        `⚠️ Replace with ${parsedItems.filter(i => i.selected).length} Items`
                       ) : (
                         `Add ${parsedItems.filter(i => i.selected).length} Items`
                       )}
