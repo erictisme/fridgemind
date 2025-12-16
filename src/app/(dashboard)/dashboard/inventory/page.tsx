@@ -20,17 +20,118 @@ interface InventoryItem {
 
 type LocationFilter = 'all' | 'fridge' | 'freezer' | 'pantry'
 
-// Food emojis for types
+// Smart food emoji based on item name
+const getFoodEmoji = (name: string, type: string): string => {
+  const lowerName = name.toLowerCase()
+
+  // Fruits
+  if (/apple|apples/.test(lowerName)) return '🍎'
+  if (/banana|bananas/.test(lowerName)) return '🍌'
+  if (/orange|oranges|mandarin/.test(lowerName)) return '🍊'
+  if (/lemon|lemons/.test(lowerName)) return '🍋'
+  if (/grape|grapes/.test(lowerName)) return '🍇'
+  if (/strawberr/.test(lowerName)) return '🍓'
+  if (/blueberr|berry|berries/.test(lowerName)) return '🫐'
+  if (/cherry|cherries/.test(lowerName)) return '🍒'
+  if (/peach/.test(lowerName)) return '🍑'
+  if (/pear/.test(lowerName)) return '🍐'
+  if (/watermelon/.test(lowerName)) return '🍉'
+  if (/melon/.test(lowerName)) return '🍈'
+  if (/pineapple/.test(lowerName)) return '🍍'
+  if (/mango/.test(lowerName)) return '🥭'
+  if (/coconut/.test(lowerName)) return '🥥'
+  if (/kiwi/.test(lowerName)) return '🥝'
+  if (/avocado/.test(lowerName)) return '🥑'
+  if (/tomato|tomatoes/.test(lowerName)) return '🍅'
+
+  // Vegetables
+  if (/broccoli/.test(lowerName)) return '🥦'
+  if (/carrot|carrots/.test(lowerName)) return '🥕'
+  if (/corn/.test(lowerName)) return '🌽'
+  if (/potato|potatoes/.test(lowerName)) return '🥔'
+  if (/sweet potato/.test(lowerName)) return '🍠'
+  if (/onion/.test(lowerName)) return '🧅'
+  if (/garlic/.test(lowerName)) return '🧄'
+  if (/pepper|capsicum|bell pepper/.test(lowerName)) return '🫑'
+  if (/chili|chilli/.test(lowerName)) return '🌶️'
+  if (/cucumber/.test(lowerName)) return '🥒'
+  if (/lettuce|salad|greens|spinach|kale/.test(lowerName)) return '🥬'
+  if (/cabbage/.test(lowerName)) return '🥬'
+  if (/eggplant|aubergine/.test(lowerName)) return '🍆'
+  if (/mushroom/.test(lowerName)) return '🍄'
+  if (/pea|peas/.test(lowerName)) return '🫛'
+  if (/bean|beans|edamame/.test(lowerName)) return '🫘'
+  if (/ginger/.test(lowerName)) return '🫚'
+
+  // Proteins
+  if (/chicken/.test(lowerName)) return '🍗'
+  if (/beef|steak/.test(lowerName)) return '🥩'
+  if (/pork|bacon/.test(lowerName)) return '🥓'
+  if (/fish|salmon|tuna|cod/.test(lowerName)) return '🐟'
+  if (/shrimp|prawn/.test(lowerName)) return '🦐'
+  if (/crab/.test(lowerName)) return '🦀'
+  if (/lobster/.test(lowerName)) return '🦞'
+  if (/egg/.test(lowerName)) return '🥚'
+  if (/tofu/.test(lowerName)) return '🧈'
+
+  // Dairy
+  if (/milk/.test(lowerName)) return '🥛'
+  if (/cheese/.test(lowerName)) return '🧀'
+  if (/butter/.test(lowerName)) return '🧈'
+  if (/yogurt|yoghurt/.test(lowerName)) return '🥛'
+
+  // Carbs
+  if (/bread|toast/.test(lowerName)) return '🍞'
+  if (/rice/.test(lowerName)) return '🍚'
+  if (/pasta|noodle|spaghetti/.test(lowerName)) return '🍝'
+  if (/cereal|oat/.test(lowerName)) return '🥣'
+  if (/croissant/.test(lowerName)) return '🥐'
+  if (/bagel/.test(lowerName)) return '🥯'
+  if (/pancake|waffle/.test(lowerName)) return '🥞'
+
+  // Misc foods
+  if (/honey/.test(lowerName)) return '🍯'
+  if (/chocolate/.test(lowerName)) return '🍫'
+  if (/cookie|biscuit/.test(lowerName)) return '🍪'
+  if (/cake/.test(lowerName)) return '🍰'
+  if (/ice cream/.test(lowerName)) return '🍨'
+  if (/candy|sweet/.test(lowerName)) return '🍬'
+  if (/pizza/.test(lowerName)) return '🍕'
+  if (/burger/.test(lowerName)) return '🍔'
+  if (/sandwich/.test(lowerName)) return '🥪'
+  if (/taco/.test(lowerName)) return '🌮'
+  if (/burrito/.test(lowerName)) return '🌯'
+  if (/sushi/.test(lowerName)) return '🍣'
+  if (/soup/.test(lowerName)) return '🍲'
+  if (/salad/.test(lowerName)) return '🥗'
+  if (/sauce/.test(lowerName)) return '🫙'
+  if (/oil/.test(lowerName)) return '🫒'
+  if (/juice/.test(lowerName)) return '🧃'
+  if (/coffee/.test(lowerName)) return '☕'
+  if (/tea/.test(lowerName)) return '🍵'
+  if (/wine/.test(lowerName)) return '🍷'
+  if (/beer/.test(lowerName)) return '🍺'
+
+  // Default by type
+  const typeDefaults: Record<string, string> = {
+    protein: '🍖',
+    carbs: '🍞',
+    fibre: '🥬',
+    misc: '📦',
+    vegetables: '🥬',
+    vitamins: '🥬',
+    fats: '📦',
+    other: '📦',
+  }
+  return typeDefaults[type] || '📦'
+}
+
+// Simple type emojis for dropdowns
 const typeEmojis: Record<string, string> = {
   protein: '🍖',
   carbs: '🍞',
   fibre: '🥬',
   misc: '📦',
-  // Legacy
-  vegetables: '🥬',
-  vitamins: '🥬',
-  fats: '📦',
-  other: '📦',
 }
 
 const TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
@@ -697,7 +798,7 @@ export default function InventoryPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sortedItems.map(item => {
             const status = getFreshnessStatus(item.expiry_date)
-            const emoji = typeEmojis[item.nutritional_type] || '📦'
+            const emoji = getFoodEmoji(item.name, item.nutritional_type)
             const isExpanded = expandedId === item.id
 
             return (
@@ -993,7 +1094,7 @@ Broccoli (350g) x 1
                           onChange={() => toggleParsedItem(idx)}
                           className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                         />
-                        <span className="text-lg">{typeEmojis[item.type] || '📦'}</span>
+                        <span className="text-lg">{getFoodEmoji(item.name, item.type)}</span>
                         <div className="flex-1 min-w-0">
                           <input
                             type="text"

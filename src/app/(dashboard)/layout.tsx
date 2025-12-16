@@ -29,7 +29,6 @@ export default async function DashboardLayout({
                 <NavLink href="/dashboard/inspire">Inspire</NavLink>
                 <NavLink href="/dashboard/shopping-list">List</NavLink>
                 <NavLink href="/dashboard/inventory">Store</NavLink>
-                <NavLink href="/dashboard/suggestions">Cook</NavLink>
                 <NavLink href="/dashboard/groceries">History</NavLink>
               </div>
             </div>
@@ -48,7 +47,6 @@ export default async function DashboardLayout({
           <MobileNavLink href="/dashboard/inspire">Inspire</MobileNavLink>
           <MobileNavLink href="/dashboard/shopping-list">List</MobileNavLink>
           <MobileNavLink href="/dashboard/inventory">Store</MobileNavLink>
-          <MobileNavLink href="/dashboard/suggestions">Cook</MobileNavLink>
           <MobileNavLink href="/dashboard/groceries">History</MobileNavLink>
         </div>
       </div>
