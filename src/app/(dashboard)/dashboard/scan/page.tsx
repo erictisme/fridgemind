@@ -37,7 +37,7 @@ interface ExistingInventoryItem {
 }
 
 const NUTRITIONAL_TYPES = ['protein', 'carbs', 'fibre', 'misc']
-const UNITS = ['serving', 'piece', 'pack', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
+const UNITS = ['serving', 'piece', 'pack', 'g', 'kg', 'ml', 'L', 'bottle', 'carton', 'lb', 'oz', 'gallon', 'bunch', 'bag', 'container', 'can', 'jar']
 const FRESHNESS_OPTIONS = ['fresh', 'use_soon', 'expired']
 
 interface SaveResult {

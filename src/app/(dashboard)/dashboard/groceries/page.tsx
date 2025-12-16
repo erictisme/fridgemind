@@ -122,6 +122,21 @@ export default function HistoryPage() {
     total: number
     count: number
   }>>([])
+
+  // Import receipt to inventory
+  const [importingReceipt, setImportingReceipt] = useState<Receipt | null>(null)
+  const [receiptItems, setReceiptItems] = useState<Array<{
+    id: string
+    item_name: string
+    normalized_name: string | null
+    quantity: number
+    unit_price: number
+    total_price: number
+    category: string
+    selected: boolean
+  }>>([])
+  const [importLocation, setImportLocation] = useState<'fridge' | 'freezer' | 'pantry'>('fridge')
+  const [loadingReceiptItems, setLoadingReceiptItems] = useState(false)
   const [loadingCategoryItems, setLoadingCategoryItems] = useState(false)
 
   const fetchData = useCallback(async () => {
@@ -495,6 +510,107 @@ export default function HistoryPage() {
       console.error('Error fetching category items:', error)
     }
     setLoadingCategoryItems(false)
+  }
+
+  // Import receipt to inventory functions
+  const openImportModal = async (receipt: Receipt) => {
+    setImportingReceipt(receipt)
+    setLoadingReceiptItems(true)
+    try {
+      // Fetch items for this specific receipt
+      const res = await fetch(`/api/receipts/${receipt.id}/items`)
+      if (res.ok) {
+        const data = await res.json()
+        setReceiptItems((data.items || []).map((item: { id: string; item_name: string; normalized_name: string | null; quantity: number; unit_price: number; total_price: number; category: string }) => ({
+          ...item,
+          selected: item.category !== 'household', // Auto-select non-household items
+        })))
+      }
+    } catch (error) {
+      console.error('Error fetching receipt items:', error)
+    }
+    setLoadingReceiptItems(false)
+  }
+
+  const closeImportModal = () => {
+    setImportingReceipt(null)
+    setReceiptItems([])
+    setImportLocation('fridge')
+  }
+
+  const handleImportToInventory = async () => {
+    const selectedItems = receiptItems.filter(item => item.selected)
+    if (selectedItems.length === 0) return
+
+    setAddingToInventory(true)
+    try {
+      const today = new Date().toISOString().split('T')[0]
+
+      // Map receipt items to inventory format
+      const inventoryItems = selectedItems.map(item => {
+        // Map receipt category to nutritional type
+        const typeMap: Record<string, string> = {
+          produce: 'fibre',
+          dairy: 'misc',
+          protein: 'protein',
+          pantry: 'carbs',
+          beverage: 'misc',
+          frozen: 'misc',
+          snacks: 'misc',
+          bakery: 'carbs',
+          other: 'misc',
+        }
+        const nutritionalType = typeMap[item.category] || 'misc'
+
+        // Calculate expiry based on location and type
+        const getExpiryDays = (type: string, loc: string) => {
+          if (loc === 'freezer') return 30
+          if (loc === 'pantry') return type === 'carbs' ? 14 : 30
+          // Fridge
+          if (type === 'protein') return 4
+          if (type === 'fibre') return 7
+          return 7
+        }
+        const expiryDays = getExpiryDays(nutritionalType, importLocation)
+        const expiryDate = new Date()
+        expiryDate.setDate(expiryDate.getDate() + expiryDays)
+
+        return {
+          name: item.normalized_name || item.item_name,
+          storage_category: nutritionalType,
+          nutritional_type: nutritionalType,
+          location: importLocation,
+          quantity: item.quantity,
+          unit: 'pc',
+          purchase_date: today,
+          expiry_date: expiryDate.toISOString().split('T')[0],
+          freshness: 'fresh',
+          confidence: 0.9,
+        }
+      })
+
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: inventoryItems,
+          location: importLocation,
+        }),
+      })
+
+      if (res.ok) {
+        const result = await res.json()
+        setInventorySuccess(`Added ${result.inserted || selectedItems.length} items to ${importLocation}`)
+        closeImportModal()
+        setTimeout(() => setInventorySuccess(null), 3000)
+      } else {
+        throw new Error('Failed to add items')
+      }
+    } catch (error) {
+      console.error('Error importing to inventory:', error)
+      alert('Failed to import items to inventory')
+    }
+    setAddingToInventory(false)
   }
 
   const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`
@@ -1273,8 +1389,8 @@ Total: $14.90"
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
+                <div className="flex items-center gap-2">
+                  <div className="text-right mr-2">
                     <div className="text-lg font-semibold text-gray-900">
                       {formatCurrency(receipt.total)}
                     </div>
@@ -1284,6 +1400,20 @@ Total: $14.90"
                       </div>
                     )}
                   </div>
+                  <button
+                    onClick={() => openImportModal(receipt)}
+                    className="p-2 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                    title="Add to inventory"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                      />
+                    </svg>
+                  </button>
                   <button
                     onClick={() => deleteReceipt(receipt.id)}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -1302,6 +1432,134 @@ Total: $14.90"
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* Import to Inventory Modal */}
+      {importingReceipt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Add to Inventory</h2>
+                <p className="text-sm text-gray-500">
+                  {importingReceipt.store_name} - {new Date(importingReceipt.receipt_date).toLocaleDateString()}
+                </p>
+              </div>
+              <button
+                onClick={closeImportModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {loadingReceiptItems ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                </div>
+              ) : receiptItems.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No items found in this receipt</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">
+                      {receiptItems.filter(i => i.selected).length} of {receiptItems.length} items selected
+                    </p>
+                    <button
+                      onClick={() => setReceiptItems(prev => prev.map(i => ({ ...i, selected: !prev.every(x => x.selected) })))}
+                      className="text-sm text-emerald-600 hover:text-emerald-700"
+                    >
+                      {receiptItems.every(i => i.selected) ? 'Deselect all' : 'Select all'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {receiptItems.map((item, idx) => (
+                      <label
+                        key={item.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          item.selected ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={() => setReceiptItems(prev => prev.map((i, j) =>
+                            j === idx ? { ...i, selected: !i.selected } : i
+                          ))}
+                          className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 truncate">
+                            {item.normalized_name || item.item_name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {item.quantity}x • {item.category} • {formatCurrency(item.total_price)}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Add to:
+                    </label>
+                    <div className="flex gap-2">
+                      {(['fridge', 'freezer', 'pantry'] as const).map(loc => (
+                        <button
+                          key={loc}
+                          onClick={() => setImportLocation(loc)}
+                          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            importLocation === loc
+                              ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-500'
+                              : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                          }`}
+                        >
+                          {loc === 'fridge' ? '🧊' : loc === 'freezer' ? '❄️' : '🗄️'} {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={handleImportToInventory}
+                      disabled={addingToInventory || receiptItems.filter(i => i.selected).length === 0}
+                      className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {addingToInventory ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Adding...
+                        </>
+                      ) : (
+                        `Add ${receiptItems.filter(i => i.selected).length} Items`
+                      )}
+                    </button>
+                    <button
+                      onClick={closeImportModal}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {inventorySuccess && (
+        <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {inventorySuccess}
         </div>
       )}
     </div>

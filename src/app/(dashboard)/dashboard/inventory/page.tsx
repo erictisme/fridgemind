@@ -36,6 +36,7 @@ const typeEmojis: Record<string, string> = {
 const TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
 const LOCATIONS = ['fridge', 'freezer', 'pantry'] as const
 const FRESHNESS_LEVELS = ['fresh', 'use_soon', 'expired'] as const
+const UNITS = ['serving', 'pc', 'g', 'kg', 'ml', 'L', 'pack', 'bunch', 'bag', 'bottle', 'carton', 'can', 'jar'] as const
 
 // Default shelf life in days based on type + location
 const getDefaultExpiryDays = (type: string, location: string): number => {
@@ -107,6 +108,7 @@ const getDefaultNewItem = () => {
     nutritional_type: 'misc' as string,
     location: 'fridge' as string,
     quantity: 1,
+    unit: 'serving' as string,
     added_date: today,
     expiry_date: calcExpiryDate(today, 'misc', 'fridge'),
   }
@@ -214,7 +216,7 @@ export default function InventoryPage() {
             nutritional_type: newItem.nutritional_type,
             location: newItem.location,
             quantity: newItem.quantity,
-            unit: 'serving',
+            unit: newItem.unit,
             expiry_date: newItem.expiry_date,
             freshness: 'fresh',
             confidence: 1,
@@ -587,16 +589,27 @@ export default function InventoryPage() {
               </select>
             </div>
 
-            {/* Servings */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Servings</label>
-              <input
-                type="number"
-                min="1"
-                value={newItem.quantity}
-                onChange={(e) => updateNewItem('quantity', parseInt(e.target.value) || 1)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
-              />
+            {/* Quantity + Unit */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={newItem.quantity}
+                  onChange={(e) => updateNewItem('quantity', parseInt(e.target.value) || 1)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+                />
+                <select
+                  value={newItem.unit}
+                  onChange={(e) => updateNewItem('unit', e.target.value)}
+                  className="w-24 px-2 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+                >
+                  {UNITS.map(unit => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Added Date */}
