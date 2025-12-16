@@ -127,6 +127,20 @@ export default function InventoryPage() {
   const [estimatingExpiry, setEstimatingExpiry] = useState(false)
   const estimateAbortRef = useRef<AbortController | null>(null)
 
+  // Paste list state
+  const [showPasteModal, setShowPasteModal] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteLocation, setPasteLocation] = useState<'fridge' | 'freezer' | 'pantry'>('fridge')
+  const [parsedItems, setParsedItems] = useState<Array<{
+    name: string
+    quantity: number
+    unit: string
+    type: string
+    selected: boolean
+  }>>([])
+  const [parsing, setParsing] = useState(false)
+  const [pasteStep, setPasteStep] = useState<'input' | 'review'>('input')
+
   useEffect(() => {
     fetchInventory()
   }, [])
@@ -276,6 +290,99 @@ export default function InventoryPage() {
     setEditingItem({ ...editingItem, [field]: value })
   }
 
+  // Paste list functions
+  const handleParseText = async () => {
+    if (!pasteText.trim()) return
+
+    setParsing(true)
+    try {
+      const res = await fetch('/api/inventory/parse-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: pasteText }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Failed to parse text')
+        setParsing(false)
+        return
+      }
+
+      if (data.items && data.items.length > 0) {
+        setParsedItems(data.items.map((item: { name: string; quantity: number; unit: string; type: string }) => ({
+          ...item,
+          selected: true,
+        })))
+        setPasteStep('review')
+      } else {
+        setError('No items found in the text')
+      }
+    } catch {
+      setError('Failed to parse text')
+    }
+    setParsing(false)
+  }
+
+  const handleAddParsedItems = async () => {
+    const selectedItems = parsedItems.filter(item => item.selected)
+    if (selectedItems.length === 0) return
+
+    setSaving(true)
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const itemsToAdd = selectedItems.map(item => ({
+        name: item.name,
+        storage_category: item.type,
+        nutritional_type: item.type,
+        location: pasteLocation,
+        quantity: item.quantity,
+        unit: item.unit,
+        expiry_date: calcExpiryDate(today, item.type, pasteLocation),
+        freshness: 'fresh',
+        confidence: 0.9,
+      }))
+
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: itemsToAdd,
+          location: pasteLocation,
+        }),
+      })
+
+      if (!res.ok) throw new Error('Failed to add items')
+
+      await fetchInventory()
+      closePasteModal()
+    } catch {
+      setError('Failed to add items')
+    }
+    setSaving(false)
+  }
+
+  const closePasteModal = () => {
+    setShowPasteModal(false)
+    setPasteText('')
+    setParsedItems([])
+    setPasteStep('input')
+    setPasteLocation('fridge')
+  }
+
+  const toggleParsedItem = (index: number) => {
+    setParsedItems(prev => prev.map((item, i) =>
+      i === index ? { ...item, selected: !item.selected } : item
+    ))
+  }
+
+  const updateParsedItem = (index: number, field: string, value: string | number) => {
+    setParsedItems(prev => prev.map((item, i) =>
+      i === index ? { ...item, [field]: value } : item
+    ))
+  }
+
   const handlePurchaseDateChange = async (purchaseDate: string) => {
     if (!editingItem) return
 
@@ -362,6 +469,12 @@ export default function InventoryPage() {
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
           >
             + Add
+          </button>
+          <button
+            onClick={() => setShowPasteModal(true)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+          >
+            📋 Paste
           </button>
           <Link
             href="/dashboard/scan"
@@ -741,6 +854,182 @@ export default function InventoryPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Paste List Modal */}
+      {showPasteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {pasteStep === 'input' ? '📋 Paste Grocery List' : '✅ Review Items'}
+              </h2>
+              <button
+                onClick={closePasteModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {pasteStep === 'input' ? (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Paste any text with grocery items - delivery confirmations, shopping lists, recipes, etc.
+                    AI will extract the items for you.
+                  </p>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Storage Location
+                    </label>
+                    <select
+                      value={pasteLocation}
+                      onChange={(e) => setPasteLocation(e.target.value as 'fridge' | 'freezer' | 'pantry')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white"
+                    >
+                      <option value="fridge">🧊 Fridge</option>
+                      <option value="freezer">❄️ Freezer</option>
+                      <option value="pantry">🗄️ Pantry</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Paste your list here
+                    </label>
+                    <textarea
+                      value={pasteText}
+                      onChange={(e) => setPasteText(e.target.value)}
+                      placeholder={`Example:
+Avocado (1pc) x 1
+Tomato (Cherry) (500g) x 1
+Broccoli (350g) x 1
+2 chicken breasts
+1L milk`}
+                      rows={8}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white resize-none"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleParseText}
+                      disabled={parsing || !pasteText.trim()}
+                      className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {parsing ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        '✨ Extract Items'
+                      )}
+                    </button>
+                    <button
+                      onClick={closePasteModal}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">
+                      {parsedItems.filter(i => i.selected).length} of {parsedItems.length} items selected
+                    </p>
+                    <button
+                      onClick={() => setPasteStep('input')}
+                      className="text-sm text-emerald-600 hover:text-emerald-700"
+                    >
+                      ← Back to edit
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {parsedItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 p-3 rounded-lg border ${
+                          item.selected ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={() => toggleParsedItem(idx)}
+                          className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="text-lg">{typeEmojis[item.type] || '📦'}</span>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => updateParsedItem(idx, 'name', e.target.value)}
+                            className="w-full font-medium text-gray-900 bg-transparent border-none p-0 focus:ring-0"
+                          />
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) => updateParsedItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                              className="w-16 bg-white border border-gray-200 rounded px-1 py-0.5 text-gray-900"
+                              min="1"
+                            />
+                            <span>{item.unit}</span>
+                          </div>
+                        </div>
+                        <select
+                          value={item.type}
+                          onChange={(e) => updateParsedItem(idx, 'type', e.target.value)}
+                          className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700"
+                        >
+                          {TYPES.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-200">
+                    <p className="text-sm text-gray-600 mb-2">
+                      Adding to: <span className="font-medium">{pasteLocation}</span>
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAddParsedItems}
+                      disabled={saving || parsedItems.filter(i => i.selected).length === 0}
+                      className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {saving ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Adding...
+                        </>
+                      ) : (
+                        `Add ${parsedItems.filter(i => i.selected).length} Items`
+                      )}
+                    </button>
+                    <button
+                      onClick={closePasteModal}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
