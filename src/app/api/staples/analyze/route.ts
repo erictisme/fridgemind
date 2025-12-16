@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 
 interface ReceiptItem {
   item_name: string
+  normalized_name: string | null
+  food_type: string | null
   category: string
   quantity: number
   created_at: string
@@ -11,6 +13,7 @@ interface ReceiptItem {
 
 interface ItemAggregate {
   name: string
+  food_type: string | null
   category: string
   purchase_count: number
   first_purchased_at: string
@@ -28,11 +31,11 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all receipt items
+    // Fetch all receipt items (with normalized names if available)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: receiptItems, error: itemsError } = await (supabase as any)
       .from('receipt_items')
-      .select('item_name, category, quantity, created_at, receipt_id')
+      .select('item_name, normalized_name, food_type, category, quantity, created_at, receipt_id')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
 
@@ -66,17 +69,18 @@ export async function POST() {
       }
     }
 
-    // Aggregate items by normalized name
+    // Aggregate items by normalized name (prefer AI-normalized, fallback to simple normalization)
     const itemMap = new Map<string, ItemAggregate>()
 
     for (const item of receiptItems as ReceiptItem[]) {
       const receiptDate = receiptDateMap.get(item.receipt_id) || item.created_at.split('T')[0]
 
-      // Normalize name: lowercase, trim, remove extra spaces
-      const normalizedName = item.item_name.toLowerCase().trim().replace(/\s+/g, ' ')
+      // Use AI-normalized name if available, otherwise fallback to simple normalization
+      const displayName = item.normalized_name || item.item_name
+      const keyName = (item.normalized_name || item.item_name).toLowerCase().trim().replace(/\s+/g, ' ')
 
-      if (itemMap.has(normalizedName)) {
-        const existing = itemMap.get(normalizedName)!
+      if (itemMap.has(keyName)) {
+        const existing = itemMap.get(keyName)!
         existing.purchase_count += 1
         existing.purchase_dates.push(receiptDate)
         if (receiptDate > existing.last_purchased_at) {
@@ -86,8 +90,9 @@ export async function POST() {
           existing.first_purchased_at = receiptDate
         }
       } else {
-        itemMap.set(normalizedName, {
-          name: item.item_name, // Keep original casing from first occurrence
+        itemMap.set(keyName, {
+          name: displayName, // Use normalized name for display
+          food_type: item.food_type,
           category: item.category,
           purchase_count: 1,
           first_purchased_at: receiptDate,
@@ -124,6 +129,7 @@ export async function POST() {
       return {
         user_id: user.id,
         name: item.name,
+        food_type: item.food_type,
         category: item.category,
         purchase_count: item.purchase_count,
         first_purchased_at: item.first_purchased_at,
@@ -155,6 +161,8 @@ export async function POST() {
         await (supabase as any)
           .from('user_staples')
           .update({
+            name: staple.name, // Update with normalized name
+            food_type: staple.food_type,
             purchase_count: staple.purchase_count,
             first_purchased_at: staple.first_purchased_at,
             last_purchased_at: staple.last_purchased_at,

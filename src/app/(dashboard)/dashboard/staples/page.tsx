@@ -41,6 +41,7 @@ export default function StaplesPage() {
   const [staples, setStaples] = useState<Staple[]>([])
   const [loading, setLoading] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null)
   const [filter, setFilter] = useState<'all' | 'staples' | 'occasional' | 'unclassified'>('all')
   const [counts, setCounts] = useState({ total: 0, staples: 0, occasional: 0, unclassified: 0 })
@@ -81,6 +82,31 @@ export default function StaplesPage() {
       alert('Error analyzing receipts')
     }
     setAnalyzing(false)
+  }
+
+  const clearAndReanalyze = async () => {
+    if (!confirm('This will delete all your current staples and re-analyze from receipt history. Continue?')) {
+      return
+    }
+
+    setClearing(true)
+    try {
+      // First clear all staples
+      const clearRes = await fetch('/api/staples', { method: 'DELETE' })
+      if (!clearRes.ok) {
+        alert('Failed to clear staples')
+        setClearing(false)
+        return
+      }
+
+      // Then re-analyze
+      setClearing(false)
+      await analyzeReceipts()
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error clearing staples')
+      setClearing(false)
+    }
   }
 
   const updateStaple = async (id: string, updates: { is_staple?: boolean; is_occasional?: boolean }) => {
@@ -140,13 +166,24 @@ export default function StaplesPage() {
             Items you buy regularly. Staples won&apos;t get alternative suggestions.
           </p>
         </div>
-        <button
-          onClick={analyzeReceipts}
-          disabled={analyzing}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium"
-        >
-          {analyzing ? 'Analyzing...' : 'Analyze Receipts'}
-        </button>
+        <div className="flex gap-2">
+          {staples.length > 0 && (
+            <button
+              onClick={clearAndReanalyze}
+              disabled={analyzing || clearing}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 font-medium"
+            >
+              {clearing ? 'Clearing...' : 'Clear & Re-analyze'}
+            </button>
+          )}
+          <button
+            onClick={analyzeReceipts}
+            disabled={analyzing || clearing}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium"
+          >
+            {analyzing ? 'Analyzing...' : 'Analyze Receipts'}
+          </button>
+        </div>
       </div>
 
       {/* Analysis Result */}

@@ -63,13 +63,14 @@ const CATEGORY_EMOJI: Record<string, string> = {
 export default function HistoryPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const initialTab = searchParams.get('tab') === 'upload' ? 'upload' : 'dashboard'
+  const tabParam = searchParams.get('tab')
+  const initialTab = tabParam === 'upload' ? 'upload' : tabParam === 'staples' ? 'staples' : tabParam === 'receipts' ? 'receipts' : 'overview'
 
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'receipts' | 'upload'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'overview' | 'staples' | 'receipts' | 'upload'>(initialTab)
 
   // New state for inventory flow
   const [lastParsedReceipt, setLastParsedReceipt] = useState<ParsedReceipt | null>(null)
@@ -91,6 +92,38 @@ export default function HistoryPage() {
   const [receiptText, setReceiptText] = useState('')
   const [parsingText, setParsingText] = useState(false)
 
+  // Normalization status
+  const [normStatus, setNormStatus] = useState<{
+    total: number
+    normalized: number
+    unnormalized: number
+    percent_complete: number
+  } | null>(null)
+  const [normalizing, setNormalizing] = useState(false)
+
+  // Staples state
+  const [staples, setStaples] = useState<Array<{
+    id: string
+    name: string
+    category: string | null
+    purchase_count: number
+    is_staple: boolean
+    is_occasional: boolean
+    avg_purchase_frequency_days: number | null
+  }>>([])
+  const [staplesCounts, setStaplesCounts] = useState({ total: 0, staples: 0, occasional: 0, unclassified: 0 })
+  const [analyzingStaples, setAnalyzingStaples] = useState(false)
+
+  // Category drill-down
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [categoryItems, setCategoryItems] = useState<Array<{
+    name: string
+    normalized_name: string | null
+    total: number
+    count: number
+  }>>([])
+  const [loadingCategoryItems, setLoadingCategoryItems] = useState(false)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -104,6 +137,21 @@ export default function HistoryPage() {
       if (analyticsRes.ok) {
         const data = await analyticsRes.json()
         setAnalytics(data)
+      }
+
+      // Check normalization status
+      const normRes = await fetch('/api/receipts/backfill-normalize')
+      if (normRes.ok) {
+        const data = await normRes.json()
+        setNormStatus(data)
+      }
+
+      // Fetch staples
+      const staplesRes = await fetch('/api/staples')
+      if (staplesRes.ok) {
+        const data = await staplesRes.json()
+        setStaples(data.staples || [])
+        setStaplesCounts(data.counts || { total: 0, staples: 0, occasional: 0, unclassified: 0 })
       }
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -331,6 +379,95 @@ export default function HistoryPage() {
     }
   }
 
+  const handleNormalize = async () => {
+    setNormalizing(true)
+    try {
+      // Run normalization in batches until done
+      let remaining = normStatus?.unnormalized || 0
+      while (remaining > 0) {
+        const res = await fetch('/api/receipts/backfill-normalize', { method: 'POST' })
+        const data = await res.json()
+
+        if (!res.ok) {
+          alert(data.error || 'Failed to normalize')
+          break
+        }
+
+        remaining = data.remaining
+        // Update status
+        const statusRes = await fetch('/api/receipts/backfill-normalize')
+        if (statusRes.ok) {
+          const statusData = await statusRes.json()
+          setNormStatus(statusData)
+        }
+      }
+      // Refresh data after normalization
+      fetchData()
+    } catch (error) {
+      console.error('Normalization error:', error)
+    }
+    setNormalizing(false)
+  }
+
+  // Staples functions
+  const analyzeStaples = async () => {
+    setAnalyzingStaples(true)
+    try {
+      const res = await fetch('/api/staples/analyze', { method: 'POST' })
+      if (res.ok) {
+        fetchData()
+      } else {
+        alert('Failed to analyze receipts')
+      }
+    } catch (error) {
+      console.error('Error analyzing staples:', error)
+    }
+    setAnalyzingStaples(false)
+  }
+
+  const clearAndReanalyzeStaples = async () => {
+    if (!confirm('Clear all staples and re-analyze from receipts?')) return
+    setAnalyzingStaples(true)
+    try {
+      await fetch('/api/staples', { method: 'DELETE' })
+      await analyzeStaples()
+    } catch (error) {
+      console.error('Error:', error)
+    }
+    setAnalyzingStaples(false)
+  }
+
+  const updateStaple = async (id: string, updates: { is_staple?: boolean; is_occasional?: boolean }) => {
+    try {
+      const res = await fetch('/api/staples', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates }),
+      })
+      if (res.ok) {
+        fetchData()
+      }
+    } catch (error) {
+      console.error('Error updating staple:', error)
+    }
+  }
+
+  // Category drill-down
+  const fetchCategoryItems = async (category: string) => {
+    setSelectedCategory(category)
+    setLoadingCategoryItems(true)
+    try {
+      const res = await fetch(`/api/receipts/analytics/category?category=${encodeURIComponent(category)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setCategoryItems(data.items || [])
+      }
+    } catch (error) {
+      console.error('Error fetching category items:', error)
+    }
+    setLoadingCategoryItems(false)
+  }
+
   const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`
 
   const getCategoryColor = (category: string) => {
@@ -372,14 +509,24 @@ export default function HistoryPage() {
         <h1 className="text-2xl font-bold text-gray-900">History</h1>
         <div className="flex gap-2">
           <button
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => setActiveTab('overview')}
             className={`px-4 py-2 rounded-lg font-medium ${
-              activeTab === 'dashboard'
+              activeTab === 'overview'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
             Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('staples')}
+            className={`px-4 py-2 rounded-lg font-medium ${
+              activeTab === 'staples'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Staples
           </button>
           <button
             onClick={() => setActiveTab('receipts')}
@@ -663,8 +810,8 @@ Total: $14.90"
         </div>
       )}
 
-      {/* Dashboard Tab */}
-      {activeTab === 'dashboard' && analytics && (
+      {/* Overview Tab */}
+      {activeTab === 'overview' && analytics && (
         <div className="space-y-6">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -707,6 +854,48 @@ Total: $14.90"
             </div>
           </div>
 
+          {/* Normalization Banner - show if there are unnormalized items */}
+          {normStatus && normStatus.unnormalized > 0 && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center text-xl">
+                    ✨
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">Clean up item names</h3>
+                    <p className="text-sm text-gray-600">
+                      {normStatus.unnormalized} items have cryptic names like &quot;G JAPANSE CAI XIN220&quot;.
+                      AI can normalize them.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleNormalize}
+                  disabled={normalizing}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 font-medium flex items-center gap-2"
+                >
+                  {normalizing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Normalizing... ({normStatus.percent_complete}%)
+                    </>
+                  ) : (
+                    `Normalize ${normStatus.unnormalized} items`
+                  )}
+                </button>
+              </div>
+              {normalizing && (
+                <div className="mt-3 w-full bg-amber-200 rounded-full h-2">
+                  <div
+                    className="bg-amber-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${normStatus.percent_complete}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Monthly Spending Chart */}
           {analytics.monthly_spending.length > 0 && (
             <div className="bg-white rounded-xl p-6 border border-gray-200">
@@ -744,9 +933,15 @@ Total: $14.90"
                     const maxSpend = analytics.category_breakdown[0]?.total || 1
                     const width = (cat.total / maxSpend) * 100
                     return (
-                      <div key={cat.category}>
+                      <button
+                        key={cat.category}
+                        onClick={() => fetchCategoryItems(cat.category)}
+                        className="w-full text-left hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors"
+                      >
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="capitalize text-gray-700">{cat.category}</span>
+                          <span className="capitalize text-gray-700 flex items-center gap-2">
+                            {CATEGORY_EMOJI[cat.category] || '📦'} {cat.category}
+                          </span>
                           <span className="text-gray-500">{formatCurrency(cat.total)}</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -755,7 +950,7 @@ Total: $14.90"
                             style={{ width: `${width}%` }}
                           ></div>
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -806,8 +1001,184 @@ Total: $14.90"
         </div>
       )}
 
+      {/* Category Drill-down Modal */}
+      {selectedCategory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                {CATEGORY_EMOJI[selectedCategory] || '📦'}
+                <span className="capitalize">{selectedCategory}</span> Items
+              </h3>
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {loadingCategoryItems ? (
+                <div className="text-center py-8 text-gray-500">Loading...</div>
+              ) : categoryItems.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No items found</div>
+              ) : (
+                <div className="space-y-2">
+                  {categoryItems.map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
+                    >
+                      <span className="text-gray-700 text-sm">
+                        {item.normalized_name || item.name}
+                      </span>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-gray-900">
+                          {formatCurrency(item.total)}
+                        </div>
+                        <div className="text-xs text-gray-400">×{item.count}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Staples Tab */}
+      {activeTab === 'staples' && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <p className="text-gray-500">
+              Items you buy regularly. Mark as staple or occasional to get better suggestions.
+            </p>
+            <div className="flex gap-2">
+              {staples.length > 0 && (
+                <button
+                  onClick={clearAndReanalyzeStaples}
+                  disabled={analyzingStaples}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 font-medium text-sm"
+                >
+                  Clear & Re-analyze
+                </button>
+              )}
+              <button
+                onClick={analyzeStaples}
+                disabled={analyzingStaples}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium text-sm"
+              >
+                {analyzingStaples ? 'Analyzing...' : 'Analyze Receipts'}
+              </button>
+            </div>
+          </div>
+
+          {/* Empty state */}
+          {staples.length === 0 && (
+            <div className="text-center py-12 bg-gray-50 rounded-xl">
+              <div className="text-4xl mb-4">📊</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No staples yet</h3>
+              <p className="text-gray-600 mb-4">
+                Click &quot;Analyze Receipts&quot; to identify items you buy regularly.
+              </p>
+            </div>
+          )}
+
+          {/* Stats */}
+          {staples.length > 0 && (
+            <div className="grid grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl p-4 border border-gray-200 text-center">
+                <div className="text-2xl font-bold text-gray-900">{staplesCounts.total}</div>
+                <div className="text-xs text-gray-500">Total Items</div>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200 text-center">
+                <div className="text-2xl font-bold text-emerald-600">{staplesCounts.staples}</div>
+                <div className="text-xs text-emerald-700">Staples</div>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-center">
+                <div className="text-2xl font-bold text-amber-600">{staplesCounts.occasional}</div>
+                <div className="text-xs text-amber-700">Occasional</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-center">
+                <div className="text-2xl font-bold text-gray-600">{staplesCounts.unclassified}</div>
+                <div className="text-xs text-gray-500">Unclassified</div>
+              </div>
+            </div>
+          )}
+
+          {/* Staples list */}
+          {staples.length > 0 && (
+            <div className="space-y-2">
+              {staples.map((staple) => (
+                <div
+                  key={staple.id}
+                  className="flex items-center justify-between bg-white rounded-xl p-4 border border-gray-200"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{CATEGORY_EMOJI[staple.category || 'other'] || '📦'}</span>
+                    <div>
+                      <div className="font-medium text-gray-900">{staple.name}</div>
+                      <div className="text-xs text-gray-500">
+                        Bought {staple.purchase_count}x
+                        {staple.avg_purchase_frequency_days && (
+                          <span> • Every ~{staple.avg_purchase_frequency_days} days</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {staple.is_staple ? (
+                      <>
+                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                          Staple
+                        </span>
+                        <button
+                          onClick={() => updateStaple(staple.id, { is_staple: false, is_occasional: false })}
+                          className="text-gray-400 hover:text-gray-600 text-sm"
+                        >
+                          Clear
+                        </button>
+                      </>
+                    ) : staple.is_occasional ? (
+                      <>
+                        <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                          Occasional
+                        </span>
+                        <button
+                          onClick={() => updateStaple(staple.id, { is_staple: false, is_occasional: false })}
+                          className="text-gray-400 hover:text-gray-600 text-sm"
+                        >
+                          Clear
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => updateStaple(staple.id, { is_staple: true })}
+                          className="px-3 py-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg text-sm font-medium"
+                        >
+                          Staple
+                        </button>
+                        <button
+                          onClick={() => updateStaple(staple.id, { is_occasional: true })}
+                          className="px-3 py-1 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg text-sm font-medium"
+                        >
+                          Occasional
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Staples Prompt - show when user has 5+ receipts */}
-      {receipts.length >= 5 && activeTab === 'dashboard' && (
+      {receipts.length >= 5 && activeTab === 'overview' && staples.length === 0 && (
         <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -821,12 +1192,12 @@ Total: $14.90"
                 </p>
               </div>
             </div>
-            <a
-              href="/dashboard/staples"
+            <button
+              onClick={() => setActiveTab('staples')}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
             >
-              Analyze Now
-            </a>
+              Go to Staples
+            </button>
           </div>
         </div>
       )}

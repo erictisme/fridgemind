@@ -4,6 +4,8 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
 export interface ReceiptItem {
   name: string
+  normalized_name: string  // Clean, human-readable name like "Cherry Tomatoes"
+  food_type: string        // Generic type like "tomato", "pork", "milk"
   item_code?: string
   quantity: number
   unit: string
@@ -38,17 +40,30 @@ IMPORTANT FOR FAIRPRICE RECEIPTS:
 - Payment method: NETS, VISA, MASTERCARD, CASH, etc.
 - LinkPoints or FairPrice app discounts may appear
 
-For each item, categorize it:
-- produce: fruits, vegetables, salads
-- dairy: milk, cheese, yogurt, butter, cream
-- protein: meat, chicken, fish, seafood, eggs, tofu
-- pantry: rice, pasta, canned goods, sauces, spices, oil
-- beverage: water, juice, soda, coffee, tea
-- frozen: frozen foods, ice cream
-- household: cleaning, paper products, toiletries
-- snacks: chips, cookies, chocolate, candy
-- bakery: bread, pastries
-- other: anything else
+For each item:
+1. CATEGORY - categorize it:
+   - produce: fruits, vegetables, salads
+   - dairy: milk, cheese, yogurt, butter, cream
+   - protein: meat, chicken, fish, seafood, eggs, tofu
+   - pantry: rice, pasta, canned goods, sauces, spices, oil
+   - beverage: water, juice, soda, coffee, tea
+   - frozen: frozen foods, ice cream
+   - household: cleaning, paper products, toiletries
+   - snacks: chips, cookies, chocolate, candy
+   - bakery: bread, pastries
+   - other: anything else
+
+2. NORMALIZED_NAME - clean, human-readable name:
+   - "G JAPANSE CAI XIN220" → "Japanese Cai Xin"
+   - "D B.PORK SHOULDER250" → "Pork Shoulder"
+   - "CHY TOM 250G" → "Cherry Tomatoes"
+   - Remove brand codes, weights, store prefixes
+   - Keep it simple and recognizable
+
+3. FOOD_TYPE - generic food type for grouping:
+   - "cherry_tomatoes", "tomatoes", "pork", "chicken_breast", "milk", "eggs"
+   - "leafy_greens", "mushroom", "onion", "garlic", "rice", "pasta"
+   - Use lowercase with underscores, be specific but not brand-specific
 
 Output format: Return ONLY a valid JSON object:
 {
@@ -62,7 +77,9 @@ Output format: Return ONLY a valid JSON object:
   "payment_method": "string or null",
   "items": [
     {
-      "name": "string (clean product name)",
+      "name": "string (original receipt text)",
+      "normalized_name": "string (clean human-readable name)",
+      "food_type": "string (generic type for grouping)",
       "item_code": "string or null",
       "quantity": number,
       "unit": "string (pc, kg, pack, bottle, etc)",
@@ -75,7 +92,9 @@ Output format: Return ONLY a valid JSON object:
 }
 
 GUIDELINES:
-- Clean up item names (remove codes, make readable)
+- Keep original "name" as-is from receipt for reference
+- "normalized_name" should be what a human would call the item
+- "food_type" should be consistent across different brands/sizes of same item
 - Convert all prices to numbers (no $ symbols)
 - If quantity is not specified, assume 1
 - If unit is not clear, use "pc" (piece)
@@ -126,6 +145,8 @@ export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt>
       payment_method: parsed.payment_method || null,
       items: parsed.items.map((item: ReceiptItem) => ({
         name: item.name,
+        normalized_name: item.normalized_name || item.name,
+        food_type: item.food_type || 'other',
         item_code: item.item_code || null,
         quantity: item.quantity || 1,
         unit: item.unit || 'pc',
@@ -183,6 +204,8 @@ export async function parseReceiptImage(imageBase64: string): Promise<ParsedRece
       payment_method: parsed.payment_method || null,
       items: parsed.items.map((item: ReceiptItem) => ({
         name: item.name,
+        normalized_name: item.normalized_name || item.name,
+        food_type: item.food_type || 'other',
         item_code: item.item_code || null,
         quantity: item.quantity || 1,
         unit: item.unit || 'pc',
@@ -207,17 +230,27 @@ The text may be from:
 - Restaurant receipts
 - Any food purchase
 
-Extract all items and their details. For each item, categorize it:
-- produce: fruits, vegetables, salads
-- dairy: milk, cheese, yogurt, butter, cream
-- protein: meat, chicken, fish, seafood, eggs, tofu
-- pantry: rice, pasta, canned goods, sauces, spices, oil
-- beverage: water, juice, soda, coffee, tea
-- frozen: frozen foods, ice cream
-- household: cleaning, paper products, toiletries
-- snacks: chips, cookies, chocolate, candy
-- bakery: bread, pastries
-- other: anything else
+For each item:
+1. CATEGORY - categorize it:
+   - produce: fruits, vegetables, salads
+   - dairy: milk, cheese, yogurt, butter, cream
+   - protein: meat, chicken, fish, seafood, eggs, tofu
+   - pantry: rice, pasta, canned goods, sauces, spices, oil
+   - beverage: water, juice, soda, coffee, tea
+   - frozen: frozen foods, ice cream
+   - household: cleaning, paper products, toiletries
+   - snacks: chips, cookies, chocolate, candy
+   - bakery: bread, pastries
+   - other: anything else
+
+2. NORMALIZED_NAME - clean, human-readable name:
+   - Remove brand codes, weights, store prefixes
+   - Keep it simple and recognizable
+   - Example: "CHY TOM 250G" → "Cherry Tomatoes"
+
+3. FOOD_TYPE - generic food type for grouping:
+   - Use lowercase with underscores
+   - Examples: "cherry_tomatoes", "pork", "milk", "eggs", "leafy_greens"
 
 Output format: Return ONLY a valid JSON object:
 {
@@ -231,7 +264,9 @@ Output format: Return ONLY a valid JSON object:
   "payment_method": "string or null",
   "items": [
     {
-      "name": "string (clean product name)",
+      "name": "string (original text from receipt)",
+      "normalized_name": "string (clean human-readable name)",
+      "food_type": "string (generic type for grouping)",
       "quantity": number,
       "unit": "string (pc, kg, pack, bottle, etc)",
       "unit_price": number or null,
@@ -242,7 +277,9 @@ Output format: Return ONLY a valid JSON object:
 }
 
 GUIDELINES:
-- Clean up item names (remove codes, make readable)
+- Keep original "name" as-is from receipt
+- "normalized_name" should be what a human would call the item
+- "food_type" should be consistent across different brands/sizes
 - If quantity not specified, assume 1
 - If unit not clear, use "pc"
 - If total not found, sum up items
@@ -289,6 +326,8 @@ export async function parseReceiptText(receiptText: string): Promise<ParsedRecei
       payment_method: parsed.payment_method || null,
       items: parsed.items.map((item: ReceiptItem) => ({
         name: item.name,
+        normalized_name: item.normalized_name || item.name,
+        food_type: item.food_type || 'other',
         item_code: null,
         quantity: item.quantity || 1,
         unit: item.unit || 'pc',

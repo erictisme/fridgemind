@@ -112,3 +112,32 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+// DELETE: Clear all staples (for re-analysis with normalized names)
+export async function DELETE() {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Delete all staples for this user
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('user_staples')
+      .delete()
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('Error deleting staples:', error)
+      return NextResponse.json({ error: 'Failed to clear staples' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, message: 'All staples cleared' })
+  } catch (error) {
+    console.error('Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

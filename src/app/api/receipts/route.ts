@@ -86,6 +86,8 @@ export async function POST(request: NextRequest) {
       receipt_id: receipt.id,
       user_id: user.id,
       item_name: item.name,
+      normalized_name: item.normalized_name,
+      food_type: item.food_type,
       item_code: item.item_code,
       quantity: item.quantity,
       unit: item.unit,
