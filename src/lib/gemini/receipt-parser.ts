@@ -136,7 +136,7 @@ export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt>
       })),
     }
   } catch (error) {
-    console.error('Failed to parse Gemini receipt response:', text)
+    console.error('Failed to parse PDF receipt response:', text)
     throw new Error(`Failed to parse receipt: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
@@ -193,7 +193,113 @@ export async function parseReceiptImage(imageBase64: string): Promise<ParsedRece
       })),
     }
   } catch (error) {
-    console.error('Failed to parse Gemini receipt response:', text)
+    console.error('Failed to parse image receipt response:', text)
     throw new Error(`Failed to parse receipt: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+const TEXT_RECEIPT_PROMPT = `You are a receipt parser. Parse the following receipt text (could be copy-pasted from email, screenshot OCR, or typed manually).
+
+The text may be from:
+- Supermarket receipts (FairPrice, Cold Storage, Giant, etc.)
+- Online grocery orders (RedMart, Amazon Fresh, etc.)
+- Boutique/specialty food stores
+- Restaurant receipts
+- Any food purchase
+
+Extract all items and their details. For each item, categorize it:
+- produce: fruits, vegetables, salads
+- dairy: milk, cheese, yogurt, butter, cream
+- protein: meat, chicken, fish, seafood, eggs, tofu
+- pantry: rice, pasta, canned goods, sauces, spices, oil
+- beverage: water, juice, soda, coffee, tea
+- frozen: frozen foods, ice cream
+- household: cleaning, paper products, toiletries
+- snacks: chips, cookies, chocolate, candy
+- bakery: bread, pastries
+- other: anything else
+
+Output format: Return ONLY a valid JSON object:
+{
+  "store_name": "string (guess from context if not explicit)",
+  "store_branch": "string or null",
+  "receipt_date": "YYYY-MM-DD (use today if not found)",
+  "receipt_number": "string or null",
+  "subtotal": number or null,
+  "gst": number or null,
+  "total": number,
+  "payment_method": "string or null",
+  "items": [
+    {
+      "name": "string (clean product name)",
+      "quantity": number,
+      "unit": "string (pc, kg, pack, bottle, etc)",
+      "unit_price": number or null,
+      "total_price": number,
+      "category": "string"
+    }
+  ]
+}
+
+GUIDELINES:
+- Clean up item names (remove codes, make readable)
+- If quantity not specified, assume 1
+- If unit not clear, use "pc"
+- If total not found, sum up items
+- Be generous in extracting items - better to include than miss
+- Do not include any text before or after the JSON`
+
+export async function parseReceiptText(receiptText: string): Promise<ParsedReceipt> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const result = await model.generateContent([
+    TEXT_RECEIPT_PROMPT,
+    `\n\nRECEIPT TEXT:\n${receiptText}`,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    if (!parsed.items || parsed.items.length === 0) {
+      throw new Error('No items found in receipt')
+    }
+
+    // Calculate total if not provided
+    const calculatedTotal = parsed.items.reduce(
+      (sum: number, item: { total_price?: number }) => sum + (item.total_price || 0),
+      0
+    )
+
+    return {
+      store_name: parsed.store_name || 'Unknown Store',
+      store_branch: parsed.store_branch || null,
+      receipt_date: parsed.receipt_date || new Date().toISOString().split('T')[0],
+      receipt_number: parsed.receipt_number || null,
+      subtotal: parsed.subtotal || null,
+      gst: parsed.gst || null,
+      total: parsed.total || calculatedTotal,
+      payment_method: parsed.payment_method || null,
+      items: parsed.items.map((item: ReceiptItem) => ({
+        name: item.name,
+        item_code: null,
+        quantity: item.quantity || 1,
+        unit: item.unit || 'pc',
+        unit_price: item.unit_price || null,
+        total_price: item.total_price || 0,
+        discount: 0,
+        category: item.category || 'other',
+      })),
+    }
+  } catch (error) {
+    console.error('Failed to parse text receipt:', text)
+    throw new Error(`Failed to parse receipt text: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }

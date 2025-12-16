@@ -86,6 +86,11 @@ export default function HistoryPage() {
     currentFile: string
   } | null>(null)
 
+  // Text paste state
+  const [showTextInput, setShowTextInput] = useState(false)
+  const [receiptText, setReceiptText] = useState('')
+  const [parsingText, setParsingText] = useState(false)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -213,6 +218,41 @@ export default function HistoryPage() {
 
     setUploading(false)
     fetchData()
+  }
+
+  const handleTextPaste = async () => {
+    if (!receiptText.trim() || receiptText.trim().length < 10) {
+      alert('Please paste some receipt text first')
+      return
+    }
+
+    setParsingText(true)
+    setLastParsedReceipt(null)
+
+    try {
+      const res = await fetch('/api/receipts/parse-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: receiptText, save: true }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setLastParsedReceipt(data.parsed)
+        setReceiptText('')
+        setShowTextInput(false)
+        fetchData()
+      } else if (data.duplicate) {
+        alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
+      } else {
+        alert(data.error || 'Failed to parse receipt')
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Error parsing receipt')
+    }
+
+    setParsingText(false)
   }
 
   const handleAddToInventory = async () => {
@@ -507,38 +547,116 @@ export default function HistoryPage() {
           )}
 
           {/* Upload area */}
-          {!lastParsedReceipt && !bulkProgress && (
-            <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
-              <div className="text-center">
-                <div className="text-4xl mb-4">🧾</div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Upload Receipts
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Select one or multiple PDFs/images. Duplicates are auto-detected.
-                </p>
-                <input
-                  type="file"
-                  accept=".pdf,image/*"
-                  multiple
-                  onChange={(e) => handleFileUpload(e.target.files)}
-                  className="hidden"
-                  id="file-upload"
-                  disabled={uploading}
-                />
-                <label
-                  htmlFor="file-upload"
-                  className={`inline-block px-6 py-3 rounded-lg font-medium cursor-pointer ${
-                    uploading
-                      ? 'bg-gray-300 text-gray-500'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                  }`}
+          {!lastParsedReceipt && !bulkProgress && !showTextInput && (
+            <div className="space-y-4">
+              {/* File upload */}
+              <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">🧾</div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Upload Receipts
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    Select one or multiple PDFs/images. Duplicates are auto-detected.
+                  </p>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    multiple
+                    onChange={(e) => handleFileUpload(e.target.files)}
+                    className="hidden"
+                    id="file-upload"
+                    disabled={uploading}
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className={`inline-block px-6 py-3 rounded-lg font-medium cursor-pointer ${
+                      uploading
+                        ? 'bg-gray-300 text-gray-500'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    {uploading ? 'Processing...' : 'Select Files'}
+                  </label>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 border-t border-gray-200"></div>
+                <span className="text-sm text-gray-400">or</span>
+                <div className="flex-1 border-t border-gray-200"></div>
+              </div>
+
+              {/* Text paste option */}
+              <button
+                onClick={() => setShowTextInput(true)}
+                className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-emerald-300 hover:bg-emerald-50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📝</span>
+                  <div>
+                    <div className="font-medium text-gray-900">Paste Receipt Text</div>
+                    <div className="text-sm text-gray-500">
+                      Copy-paste from email, online order, or boutique receipt
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* Text input mode */}
+          {showTextInput && !lastParsedReceipt && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Paste Receipt Text</h3>
+                <button
+                  onClick={() => { setShowTextInput(false); setReceiptText('') }}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  {uploading ? 'Processing...' : 'Select Files'}
-                </label>
-                <p className="text-xs text-gray-400 mt-3">
-                  Tip: Select all 57 receipts at once for bulk import
-                </p>
+                  Cancel
+                </button>
+              </div>
+              <textarea
+                value={receiptText}
+                onChange={(e) => setReceiptText(e.target.value)}
+                placeholder="Paste your receipt here...
+
+Example:
+FairPrice Xtra
+15 Dec 2024
+
+Eggs x1 - $3.50
+Milk 1L - $2.90
+Chicken Breast 500g - $8.50
+
+Total: $14.90"
+                className="w-full h-64 p-4 border border-gray-200 rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                disabled={parsingText}
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setShowTextInput(false); setReceiptText('') }}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                  disabled={parsingText}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleTextPaste}
+                  disabled={parsingText || receiptText.trim().length < 10}
+                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center gap-2"
+                >
+                  {parsingText ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Parsing...
+                    </>
+                  ) : (
+                    'Parse Receipt'
+                  )}
+                </button>
               </div>
             </div>
           )}
