@@ -703,7 +703,7 @@ export default function InspirePage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">What do you want to cook with?</h2>
-              <p className="text-sm text-gray-500">Select items to use up, or leave empty to auto-prioritize expiring items</p>
+              <p className="text-sm text-gray-500">Tick = must use in recipes. Unticked items can still be suggested.</p>
             </div>
             <button
               onClick={() => setShowIngredientPicker(false)}
