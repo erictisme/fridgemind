@@ -130,6 +130,8 @@ export default function InspirePage() {
   const [selectedCookingMethods, setSelectedCookingMethods] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
+  const [savingSuggestion, setSavingSuggestion] = useState(false)
+  const [savedSuggestionIndex, setSavedSuggestionIndex] = useState<number | null>(null)
 
   // Input state
   const [inputMode, setInputMode] = useState<InputMode>('none')
@@ -289,6 +291,39 @@ export default function InspirePage() {
       setError('Failed to generate meal suggestions')
     } finally {
       setSuggestionsLoading(false)
+    }
+  }
+
+  // Save a generated suggestion to My Recipes
+  const handleSaveSuggestion = async (suggestion: MealSuggestion) => {
+    setSavingSuggestion(true)
+    try {
+      const response = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: suggestion.name,
+          description: suggestion.description,
+          source_type: 'ai_suggestion',
+          ingredients: suggestion.ingredients_from_inventory.map(name => ({ name })),
+          instructions: suggestion.recipe_steps.map((step, i) => `${i + 1}. ${step}`).join('\n'),
+          estimated_time_minutes: suggestion.estimated_time_minutes,
+          tags: [],
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save recipe')
+
+      setSavedSuggestionIndex(currentRecipeIndex)
+      // Refresh recipes list
+      await fetchRecipes()
+
+      // Clear saved indicator after 3 seconds
+      setTimeout(() => setSavedSuggestionIndex(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save recipe')
+    } finally {
+      setSavingSuggestion(false)
     }
   }
 
@@ -1316,6 +1351,23 @@ export default function InspirePage() {
                         </div>
                       </div>
                     )}
+
+                    {/* Save to My Recipes button */}
+                    <div className="pt-3 border-t border-emerald-200">
+                      {savedSuggestionIndex === currentRecipeIndex ? (
+                        <div className="text-center text-emerald-600 font-medium py-2">
+                          ✓ Saved to My Recipes!
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleSaveSuggestion(suggestion)}
+                          disabled={savingSuggestion}
+                          className="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {savingSuggestion ? 'Saving...' : '💾 Save to My Recipes'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })()}

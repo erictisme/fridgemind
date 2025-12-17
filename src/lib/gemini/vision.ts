@@ -455,7 +455,21 @@ Do not include any text before or after the JSON array.`
       throw new Error('No JSON found in response')
     }
 
-    const suggestions: MealSuggestionAI[] = JSON.parse(jsonMatch[0])
+    const rawSuggestions = JSON.parse(jsonMatch[0])
+
+    // Normalize the response to ensure recipe_steps is always an array
+    const suggestions: MealSuggestionAI[] = rawSuggestions.map((s: Record<string, unknown>) => ({
+      ...s,
+      // Handle various formats the AI might return
+      recipe_steps: Array.isArray(s.recipe_steps)
+        ? s.recipe_steps
+        : typeof s.recipe_steps === 'string'
+          ? [s.recipe_steps]
+          : typeof s.recipe_summary === 'string'
+            ? s.recipe_summary.split(/\d+\.\s*/).filter(Boolean).map((step: string) => step.trim())
+            : [],
+    }))
+
     return suggestions.sort((a, b) => b.priority_score - a.priority_score)
   } catch (err) {
     console.error('Failed to parse meal suggestions:', text, err)
