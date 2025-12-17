@@ -46,7 +46,8 @@ interface ParsedRecipe {
 interface MealSuggestion {
   name: string
   description: string
-  recipe_summary: string
+  recipe_steps: string[]
+  recipe_summary?: string // Legacy field
   estimated_time_minutes: number
   difficulty: 'easy' | 'medium' | 'hard'
   ingredients_from_inventory: string[]
@@ -1277,7 +1278,20 @@ export default function InspirePage() {
                     {/* Recipe Steps */}
                     <div className="mb-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-2">How to make it:</h4>
-                      <p className="text-sm text-gray-600 whitespace-pre-line">{suggestion.recipe_summary}</p>
+                      <ol className="space-y-2">
+                        {(suggestion.recipe_steps || []).map((step, stepIdx) => (
+                          <li key={stepIdx} className="flex gap-3 text-sm text-gray-600">
+                            <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-medium">
+                              {stepIdx + 1}
+                            </span>
+                            <span className="pt-0.5">{step}</span>
+                          </li>
+                        ))}
+                        {/* Fallback for legacy recipe_summary */}
+                        {(!suggestion.recipe_steps || suggestion.recipe_steps.length === 0) && suggestion.recipe_summary && (
+                          <li className="text-sm text-gray-600">{suggestion.recipe_summary}</li>
+                        )}
+                      </ol>
                     </div>
 
                     {/* Additional ingredients needed */}

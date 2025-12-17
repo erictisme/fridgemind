@@ -341,7 +341,8 @@ export async function analyzeNutrition(imageBase64: string): Promise<NutritionEs
 export interface MealSuggestionAI {
   name: string
   description: string
-  recipe_summary: string
+  recipe_steps: string[]
+  recipe_summary?: string // Legacy field for backwards compatibility
   estimated_time_minutes: number
   difficulty: 'easy' | 'medium' | 'hard'
   ingredients_from_inventory: string[]
@@ -430,7 +431,7 @@ Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1
   {
     "name": "Meal Name",
     "description": "Brief appetizing 1-sentence description",
-    "recipe_summary": "3-5 step brief instructions",
+    "recipe_steps": ["Step 1 instruction", "Step 2 instruction", "Step 3 instruction"],
     "estimated_time_minutes": number,
     "difficulty": "easy" | "medium" | "hard",
     "ingredients_from_inventory": ["item1", "item2"],
@@ -439,6 +440,8 @@ Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1
     "priority_score": 0-100 (higher if uses must-use/expiring items)
   }
 ]
+
+IMPORTANT: recipe_steps must be an array of strings, each step as a separate item. Do NOT use numbered prefixes like "1." in the steps.
 
 Do not include any text before or after the JSON array.`
 
