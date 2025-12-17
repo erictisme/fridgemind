@@ -353,6 +353,8 @@ export interface MealSuggestionAI {
 export interface MealSuggestionOptions {
   recipeCount?: number // How many recipes to generate (1-5)
   mustUseItems?: string[] // Items the user specifically wants to use
+  cookingMethods?: string[] // Preferred cooking methods: oven, airfry, boil, steam, pan, etc.
+  remarks?: string // Custom notes/instructions from user
 }
 
 export async function generateMealSuggestions(
@@ -364,6 +366,8 @@ export async function generateMealSuggestions(
 
   const recipeCount = Math.min(5, Math.max(1, options?.recipeCount || 3))
   const mustUseItems = options?.mustUseItems || []
+  const cookingMethods = options?.cookingMethods || []
+  const remarks = options?.remarks || ''
 
   // Format inventory for prompt - highlight must-use items
   const inventoryText = inventoryItems.map(item => {
@@ -374,6 +378,16 @@ export async function generateMealSuggestions(
   }).join('\n')
 
   const preferencesText = preferences ? `\nUser preferences: ${preferences}` : ''
+
+  // Build cooking methods instruction
+  const cookingMethodsText = cookingMethods.length > 0
+    ? `\nPREFERRED COOKING METHODS: ${cookingMethods.join(', ')}. Prioritize recipes using these methods.`
+    : ''
+
+  // Build remarks instruction
+  const remarksText = remarks.trim()
+    ? `\nUSER'S SPECIAL INSTRUCTIONS: "${remarks}". Follow these instructions carefully when designing recipes.`
+    : ''
 
   // Build priority instructions based on whether user selected items
   let priorityInstructions: string
@@ -394,13 +408,22 @@ Build recipes AROUND these ingredients.`
 4. Variety in meal types and cuisines`
   }
 
+  // Distinctness rule for multiple recipes
+  const distinctnessRule = recipeCount > 1
+    ? `\nIMPORTANT - RECIPE DISTINCTNESS:
+- Each recipe must be DISTINCT - different cooking style, cuisine, or main technique
+- MINIMIZE ingredient overlap between recipes - spread selected ingredients across different dishes
+- If user selected 7 ingredients for 3 recipes, each recipe should focus on 2-3 main ingredients, not all 7
+- Vary the cooking methods across recipes (e.g., one stir-fry, one baked, one soup)`
+    : ''
+
   const prompt = `You are a creative home chef assistant. Generate exactly ${recipeCount} practical meal suggestion${recipeCount > 1 ? 's' : ''} based on this inventory.
 
 INVENTORY:
 ${inventoryText}
-${preferencesText}
+${preferencesText}${cookingMethodsText}${remarksText}
 
-${priorityInstructions}
+${priorityInstructions}${distinctnessRule}
 
 Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1 ? 's' : ''}:
 [

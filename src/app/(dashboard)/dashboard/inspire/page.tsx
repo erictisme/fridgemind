@@ -78,6 +78,16 @@ const DIFFICULTY_BADGES: Record<string, { label: string; color: string }> = {
 
 const MEALS = ['breakfast', 'lunch', 'dinner'] as const
 
+const COOKING_METHODS = [
+  { id: 'oven', label: 'Oven', icon: '🔥' },
+  { id: 'airfry', label: 'Air Fry', icon: '🌀' },
+  { id: 'boil', label: 'Boil', icon: '♨️' },
+  { id: 'steam', label: 'Steam', icon: '💨' },
+  { id: 'pan', label: 'Pan/Wok', icon: '🍳' },
+  { id: 'grill', label: 'Grill', icon: '🥩' },
+  { id: 'raw', label: 'No Cook', icon: '🥗' },
+]
+
 // Get week dates starting from today
 const getWeekDates = () => {
   const dates = []
@@ -116,6 +126,9 @@ export default function InspirePage() {
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([])
   const [recipeCount, setRecipeCount] = useState(3)
   const [loadingInventory, setLoadingInventory] = useState(false)
+  const [selectedCookingMethods, setSelectedCookingMethods] = useState<string[]>([])
+  const [remarks, setRemarks] = useState('')
+  const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
 
   // Input state
   const [inputMode, setInputMode] = useState<InputMode>('none')
@@ -232,12 +245,22 @@ export default function InspirePage() {
     return Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
   }
 
+  // Toggle cooking method selection
+  const toggleCookingMethod = (methodId: string) => {
+    setSelectedCookingMethods(prev =>
+      prev.includes(methodId)
+        ? prev.filter(m => m !== methodId)
+        : [...prev, methodId]
+    )
+  }
+
   const handleGenerateSuggestions = async (challenge = false) => {
     setShowSuggestions(true)
     setShowIngredientPicker(false)
     setSuggestionsLoading(true)
     setError(null)
     setChallengeMode(challenge)
+    setCurrentRecipeIndex(0)
 
     try {
       // Use POST with options if we have selected ingredients
@@ -248,6 +271,8 @@ export default function InspirePage() {
           mustUseItems: selectedIngredients,
           recipeCount,
           challenge,
+          cookingMethods: selectedCookingMethods,
+          remarks: remarks.trim(),
         }),
       })
 
@@ -791,6 +816,43 @@ export default function InspirePage() {
             </>
           )}
 
+          {/* Cooking Methods */}
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <label className="text-sm font-medium text-gray-700 block mb-2">
+              Cooking method (optional)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {COOKING_METHODS.map(method => (
+                <button
+                  key={method.id}
+                  onClick={() => toggleCookingMethod(method.id)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${
+                    selectedCookingMethods.includes(method.id)
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:border-emerald-400'
+                  }`}
+                >
+                  <span>{method.icon}</span>
+                  <span>{method.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Remarks/Notes */}
+          <div className="mt-4">
+            <label className="text-sm font-medium text-gray-700 block mb-2">
+              Special instructions (optional)
+            </label>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="e.g., I want something nutritious, grate the yacon not dice it, thinking to fry some noodles..."
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none text-sm"
+            />
+          </div>
+
           {/* Generate button */}
           <div className="mt-4 flex gap-3">
             <button
@@ -805,7 +867,7 @@ export default function InspirePage() {
           <p className="text-xs text-gray-400 mt-2 text-center">
             {selectedIngredients.length === 0
               ? 'Will prioritize items expiring soon'
-              : 'Will build recipes around your selected items'}
+              : `Recipes will be distinct, spreading ${selectedIngredients.length} items across dishes`}
           </p>
         </div>
       )}
@@ -1099,7 +1161,7 @@ export default function InspirePage() {
         </div>
       )}
 
-      {/* Generated Suggestions */}
+      {/* Generated Suggestions - Carousel View */}
       {showSuggestions && (
         <div className="bg-white rounded-xl border-2 border-emerald-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -1117,7 +1179,7 @@ export default function InspirePage() {
           {suggestionsLoading ? (
             <div className="text-center py-8">
               <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-gray-600">Generating ideas from your inventory...</p>
+              <p className="text-gray-600">Generating distinct recipes...</p>
             </div>
           ) : suggestions.length === 0 ? (
             <div className="text-center py-8">
@@ -1129,65 +1191,149 @@ export default function InspirePage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {suggestions.map((suggestion, index) => {
-                const isExpanded = expandedSuggestion === index
+            <div>
+              {/* Carousel Navigation */}
+              {suggestions.length > 1 && (
+                <div className="flex items-center justify-center gap-4 mb-4">
+                  <button
+                    onClick={() => setCurrentRecipeIndex(i => Math.max(0, i - 1))}
+                    disabled={currentRecipeIndex === 0}
+                    className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    {suggestions.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setCurrentRecipeIndex(idx)}
+                        className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                          idx === currentRecipeIndex ? 'bg-emerald-600' : 'bg-gray-300 hover:bg-gray-400'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setCurrentRecipeIndex(i => Math.min(suggestions.length - 1, i + 1))}
+                    disabled={currentRecipeIndex === suggestions.length - 1}
+                    className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Current Recipe Card */}
+              {suggestions[currentRecipeIndex] && (() => {
+                const suggestion = suggestions[currentRecipeIndex]
                 const difficulty = DIFFICULTY_BADGES[suggestion.difficulty] || DIFFICULTY_BADGES.medium
 
                 return (
-                  <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => setExpandedSuggestion(isExpanded ? null : index)}
-                      className="w-full p-3 text-left"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-medium text-gray-900">{suggestion.name}</h3>
-                          <p className="text-sm text-gray-500 line-clamp-1">{suggestion.description}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${difficulty.color}`}>
-                            {suggestion.estimated_time_minutes}m
-                          </span>
-                          <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-5 border border-emerald-200">
+                    {/* Recipe number indicator */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
+                        Dish {currentRecipeIndex + 1} of {suggestions.length}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${difficulty.color}`}>
+                          {difficulty.label}
+                        </span>
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                          ⏱️ {suggestion.estimated_time_minutes}m
+                        </span>
                       </div>
-                    </button>
+                    </div>
 
-                    {isExpanded && (
-                      <div className="px-3 pb-3 border-t border-gray-100 pt-3">
-                        <p className="text-sm text-gray-600 mb-3">{suggestion.recipe_summary}</p>
+                    {/* Recipe Title & Description */}
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">{suggestion.name}</h3>
+                    <p className="text-gray-600 mb-4">{suggestion.description}</p>
 
-                        {suggestion.expiring_items_used.length > 0 && (
-                          <div className="mb-2">
-                            <span className="text-xs text-amber-600 font-medium">Uses expiring: </span>
-                            <span className="text-xs text-amber-700">{suggestion.expiring_items_used.join(', ')}</span>
+                    {/* Ingredients from inventory */}
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Using from your kitchen:</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {suggestion.ingredients_from_inventory.map((ing, i) => (
+                          <span key={i} className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
+                            {ing}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Expiring items highlight */}
+                    {suggestion.expiring_items_used.length > 0 && (
+                      <div className="mb-4 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                        <span className="text-xs text-amber-700">
+                          ⚠️ Uses expiring: {suggestion.expiring_items_used.join(', ')}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Recipe Steps */}
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">How to make it:</h4>
+                      <p className="text-sm text-gray-600 whitespace-pre-line">{suggestion.recipe_summary}</p>
+                    </div>
+
+                    {/* Additional ingredients needed */}
+                    {suggestion.additional_ingredients_needed.length > 0 && (
+                      <div className="mb-4 p-3 bg-white rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-xs text-gray-500">You&apos;ll also need: </span>
+                            <span className="text-sm text-gray-700">{suggestion.additional_ingredients_needed.join(', ')}</span>
                           </div>
-                        )}
-
-                        {suggestion.additional_ingredients_needed.length > 0 && (
-                          <div className="mt-2">
-                            <span className="text-xs text-gray-500">Need: {suggestion.additional_ingredients_needed.join(', ')}</span>
-                            {addedSuccess === index ? (
-                              <span className="ml-2 text-xs text-emerald-600">✓ Added to list!</span>
-                            ) : (
-                              <button
-                                onClick={() => handleAddToShoppingList(index, suggestion.additional_ingredients_needed)}
-                                disabled={addingToList === index}
-                                className="ml-2 text-xs text-purple-600 hover:text-purple-700"
-                              >
-                                {addingToList === index ? 'Adding...' : '+ Add to list'}
-                              </button>
-                            )}
-                          </div>
-                        )}
+                          {addedSuccess === currentRecipeIndex ? (
+                            <span className="text-xs text-emerald-600 font-medium">✓ Added!</span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddToShoppingList(currentRecipeIndex, suggestion.additional_ingredients_needed)}
+                              disabled={addingToList === currentRecipeIndex}
+                              className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 disabled:opacity-50"
+                            >
+                              {addingToList === currentRecipeIndex ? 'Adding...' : '+ Add to list'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                 )
-              })}
+              })()}
+
+              {/* Quick switch buttons */}
+              {suggestions.length > 1 && (
+                <div className="mt-4 flex justify-center gap-2">
+                  {suggestions.map((s, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentRecipeIndex(idx)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                        idx === currentRecipeIndex
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {s.name.length > 20 ? s.name.slice(0, 20) + '...' : s.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Regenerate button */}
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => setShowIngredientPicker(true)}
+                  className="text-sm text-gray-500 hover:text-emerald-600"
+                >
+                  ← Back to ingredient selection
+                </button>
+              </div>
             </div>
           )}
         </div>
