@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 interface RecipeIngredient {
@@ -94,6 +95,7 @@ const formatDayName = (date: Date) => date.toLocaleDateString('en-US', { weekday
 const formatDateNum = (date: Date) => date.getDate()
 
 export default function InspirePage() {
+  const searchParams = useSearchParams()
   const [recipes, setRecipes] = useState<SavedRecipe[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -144,7 +146,22 @@ export default function InspirePage() {
   useEffect(() => {
     fetchRecipes()
     loadMealPlan()
-  }, [])
+
+    // Check URL params for auto-opening ingredient picker
+    const openPicker = searchParams.get('picker') === 'true'
+    const preselectedItems = searchParams.get('items')
+
+    if (openPicker) {
+      // Pre-select items if provided in URL
+      if (preselectedItems) {
+        const items = preselectedItems.split(',').map(s => s.trim()).filter(Boolean)
+        setSelectedIngredients(items)
+      }
+      // Open the ingredient picker and fetch inventory
+      setShowIngredientPicker(true)
+      fetchInventoryItems()
+    }
+  }, [searchParams])
 
   const fetchRecipes = async () => {
     setLoading(true)

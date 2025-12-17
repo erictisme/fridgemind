@@ -118,12 +118,14 @@ export async function GET() {
     // Priority 1: Items expiring very soon (today or tomorrow)
     const urgentExpiring = expiringItems.filter(i => i.days_until_expiry <= 1)
     if (urgentExpiring.length > 0) {
+      // Pre-select the expiring item names for the ingredient picker
+      const expiringNames = urgentExpiring.map(i => i.name).join(',')
       actions.push({
         type: 'use_soon',
         title: 'Use these today!',
         description: `${urgentExpiring.length} item${urgentExpiring.length > 1 ? 's' : ''} expiring`,
         icon: '🔥',
-        href: '/dashboard/suggestions',
+        href: `/dashboard/inspire?picker=true&items=${encodeURIComponent(expiringNames)}`,
         priority: 100,
         data: { items: urgentExpiring.slice(0, 3), count: urgentExpiring.length },
       })
@@ -171,7 +173,7 @@ export async function GET() {
         title: timeOfDay === 'morning' ? 'What\'s for breakfast?' : 'What\'s for dinner?',
         description: 'Get meal ideas from your inventory',
         icon: '🍳',
-        href: '/dashboard/suggestions',
+        href: '/dashboard/inspire?picker=true',
         priority: 50,
       })
     }
@@ -180,12 +182,13 @@ export async function GET() {
     if (expiringItems.length > urgentExpiring.length) {
       const soonExpiring = expiringItems.filter(i => i.days_until_expiry > 1 && i.days_until_expiry <= 3)
       if (soonExpiring.length > 0) {
+        const soonExpiringNames = soonExpiring.map(i => i.name).join(',')
         actions.push({
           type: 'use_soon',
           title: 'Use soon',
           description: `${soonExpiring.length} item${soonExpiring.length > 1 ? 's'  : ''} expiring in 2-3 days`,
           icon: '⚠️',
-          href: '/dashboard/suggestions',
+          href: `/dashboard/inspire?picker=true&items=${encodeURIComponent(soonExpiringNames)}`,
           priority: 40,
           data: { items: soonExpiring.slice(0, 3), count: soonExpiring.length },
         })
@@ -220,7 +223,7 @@ export async function GET() {
         title: 'What to cook?',
         description: 'Get meal suggestions',
         icon: '🍳',
-        href: '/dashboard/suggestions',
+        href: '/dashboard/inspire?picker=true',
         priority: 10,
       })
     }

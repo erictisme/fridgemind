@@ -158,7 +158,7 @@ export default function DashboardPage() {
                 )}
 
                 <div className={`mt-4 inline-flex items-center px-4 py-2 ${ACTION_COLORS[primary_action.type].button} text-white rounded-xl font-medium`}>
-                  {primary_action.type === 'use_soon' ? 'Get meal ideas' : 'Go'}
+                  {primary_action.type === 'use_soon' ? 'Get meal ideas' : primary_action.type === 'cook' ? 'What to cook?' : 'Go'}
                   <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
