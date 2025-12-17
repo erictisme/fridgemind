@@ -61,7 +61,7 @@ interface MealPlan {
   recipe_name: string
 }
 
-type InputMode = 'none' | 'url' | 'text'
+type InputMode = 'none' | 'url' | 'text' | 'bulk'
 
 const DIFFICULTY_BADGES: Record<string, { label: string; color: string }> = {
   easy: { label: 'Easy', color: 'bg-green-100 text-green-700' },
@@ -107,6 +107,13 @@ export default function InspirePage() {
   const [urlInput, setUrlInput] = useState('')
   const [textInput, setTextInput] = useState('')
   const [parsing, setParsing] = useState(false)
+
+  // Bulk import state
+  const [bulkInput, setBulkInput] = useState('')
+  const [bulkUrl, setBulkUrl] = useState('')
+  const [bulkRecipes, setBulkRecipes] = useState<Array<ParsedRecipe & { selected: boolean }>>([])
+  const [bulkStep, setBulkStep] = useState<'input' | 'review'>('input')
+  const [savingBulk, setSavingBulk] = useState(false)
 
   // Preview state
   const [previewRecipe, setPreviewRecipe] = useState<ParsedRecipe | null>(null)
@@ -359,6 +366,93 @@ export default function InspirePage() {
     }
   }
 
+  // Bulk import handlers
+  const handleBulkParse = async () => {
+    if (!bulkInput.trim() && !bulkUrl.trim()) return
+
+    setParsing(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/recipes/parse-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: bulkInput.trim() || undefined,
+          url: bulkUrl.trim() || undefined,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to parse recipes')
+      }
+
+      if (data.recipes && data.recipes.length > 0) {
+        setBulkRecipes(data.recipes.map((r: ParsedRecipe) => ({ ...r, selected: true })))
+        setBulkStep('review')
+      } else {
+        setError('No recipes found in the content')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse recipes')
+    } finally {
+      setParsing(false)
+    }
+  }
+
+  const handleSaveBulkRecipes = async () => {
+    const selectedRecipes = bulkRecipes.filter(r => r.selected)
+    if (selectedRecipes.length === 0) return
+
+    setSavingBulk(true)
+    setError(null)
+
+    try {
+      for (const recipe of selectedRecipes) {
+        await fetch('/api/recipes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: recipe.name,
+            description: recipe.description,
+            source_type: bulkUrl ? 'url' : 'manual',
+            source_url: bulkUrl || null,
+            ingredients: recipe.ingredients,
+            instructions: recipe.instructions,
+            estimated_time_minutes: recipe.estimated_time_minutes,
+            servings: recipe.servings || 2,
+            cuisine_type: recipe.cuisine_type,
+            tags: recipe.tags,
+          }),
+        })
+      }
+
+      // Reset and refresh
+      closeBulkImport()
+      await fetchRecipes()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save recipes')
+    } finally {
+      setSavingBulk(false)
+    }
+  }
+
+  const closeBulkImport = () => {
+    setInputMode('none')
+    setBulkInput('')
+    setBulkUrl('')
+    setBulkRecipes([])
+    setBulkStep('input')
+  }
+
+  const toggleBulkRecipe = (index: number) => {
+    setBulkRecipes(prev => prev.map((r, i) =>
+      i === index ? { ...r, selected: !r.selected } : r
+    ))
+  }
+
   // Drag and drop handlers
   const handleDragStart = (recipe: SavedRecipe) => {
     setDraggedRecipe(recipe)
@@ -441,14 +535,14 @@ export default function InspirePage() {
       {inputMode === 'none' && !previewRecipe && (
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add a Recipe</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button
               onClick={() => setInputMode('url')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
             >
               <span className="text-2xl mb-2 block">📸</span>
               <span className="font-medium text-gray-900">Instagram URL</span>
-              <p className="text-sm text-gray-500 mt-1">Paste a link to an Instagram recipe post</p>
+              <p className="text-sm text-gray-500 mt-1">Single recipe from Instagram</p>
             </button>
             <button
               onClick={() => setInputMode('text')}
@@ -456,7 +550,15 @@ export default function InspirePage() {
             >
               <span className="text-2xl mb-2 block">✍️</span>
               <span className="font-medium text-gray-900">Paste Recipe</span>
-              <p className="text-sm text-gray-500 mt-1">Paste recipe text from anywhere</p>
+              <p className="text-sm text-gray-500 mt-1">Paste a single recipe</p>
+            </button>
+            <button
+              onClick={() => setInputMode('bulk')}
+              className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
+            >
+              <span className="text-2xl mb-2 block">📚</span>
+              <span className="font-medium text-gray-900">Bulk Import</span>
+              <p className="text-sm text-gray-500 mt-1">Multiple recipes from URL or text</p>
             </button>
           </div>
         </div>
@@ -566,6 +668,139 @@ export default function InspirePage() {
               )}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Bulk Import Mode */}
+      {inputMode === 'bulk' && (
+        <div className="bg-white rounded-xl border-2 border-purple-200 p-6 mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {bulkStep === 'input' ? 'Bulk Import Recipes' : `Found ${bulkRecipes.length} Recipes`}
+            </h2>
+            <button
+              onClick={closeBulkImport}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {bulkStep === 'input' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipe Page URL</label>
+                <input
+                  type="url"
+                  value={bulkUrl}
+                  onChange={(e) => setBulkUrl(e.target.value)}
+                  placeholder="https://www.talulafarms.com/pages/recipes"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  disabled={parsing}
+                />
+              </div>
+              <div className="text-center text-gray-400 text-sm">— or —</div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Paste Multiple Recipes</label>
+                <textarea
+                  value={bulkInput}
+                  onChange={(e) => setBulkInput(e.target.value)}
+                  placeholder="Paste text containing multiple recipes..."
+                  rows={6}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
+                  disabled={parsing}
+                />
+              </div>
+              <button
+                onClick={handleBulkParse}
+                disabled={(!bulkInput.trim() && !bulkUrl.trim()) || parsing}
+                className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {parsing ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Finding recipes...
+                  </>
+                ) : (
+                  'Find Recipes'
+                )}
+              </button>
+            </div>
+          )}
+
+          {bulkStep === 'review' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Select recipes to import ({bulkRecipes.filter(r => r.selected).length} selected)
+              </p>
+
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {bulkRecipes.map((recipe, index) => (
+                  <label
+                    key={index}
+                    className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                      recipe.selected
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={recipe.selected}
+                      onChange={() => toggleBulkRecipe(index)}
+                      className="mt-1 w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900">{recipe.name}</h3>
+                      {recipe.description && (
+                        <p className="text-sm text-gray-500 line-clamp-1">{recipe.description}</p>
+                      )}
+                      <div className="flex gap-2 mt-1">
+                        {recipe.estimated_time_minutes && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                            {recipe.estimated_time_minutes}m
+                          </span>
+                        )}
+                        {recipe.ingredients.length > 0 && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                            {recipe.ingredients.length} ingredients
+                          </span>
+                        )}
+                        {recipe.cuisine_type && (
+                          <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
+                            {recipe.cuisine_type}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleSaveBulkRecipes}
+                  disabled={bulkRecipes.filter(r => r.selected).length === 0 || savingBulk}
+                  className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {savingBulk ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    `Import ${bulkRecipes.filter(r => r.selected).length} Recipes`
+                  )}
+                </button>
+                <button
+                  onClick={() => setBulkStep('input')}
+                  className="px-4 py-3 text-gray-600 hover:bg-gray-100 rounded-lg"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

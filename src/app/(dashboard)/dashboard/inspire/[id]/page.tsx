@@ -100,22 +100,40 @@ export default function RecipeDetailPage() {
     }
   }
 
+  const [cooking, setCooking] = useState(false)
+  const [cookResult, setCookResult] = useState<{
+    deducted: string[]
+    not_found: string[]
+  } | null>(null)
+
   const handleMarkCooked = async () => {
     if (!recipe) return
 
+    setCooking(true)
+    setCookResult(null)
+
     try {
-      await fetch('/api/recipes', {
-        method: 'PUT',
+      const response = await fetch(`/api/recipes/${recipe.id}/cook`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: recipe.id,
-          times_cooked: recipe.times_cooked + 1,
-          last_cooked_at: new Date().toISOString(),
-        }),
+        body: JSON.stringify({ servings_cooked: recipe.servings || 1 }),
       })
-      setRecipe({ ...recipe, times_cooked: recipe.times_cooked + 1 })
-    } catch {
-      setError('Failed to update recipe')
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to mark as cooked')
+      }
+
+      setRecipe({ ...recipe, times_cooked: data.times_cooked })
+      setCookResult(data.inventory_updated)
+
+      // Clear result after 5 seconds
+      setTimeout(() => setCookResult(null), 5000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update recipe')
+    } finally {
+      setCooking(false)
     }
   }
 
@@ -281,14 +299,46 @@ export default function RecipeDetailPage() {
             </div>
           )}
 
+          {/* Cook Result */}
+          {cookResult && (
+            <div className="mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+              <h3 className="font-semibold text-emerald-800 mb-2">✓ Marked as cooked!</h3>
+              {cookResult.deducted.length > 0 && (
+                <div className="text-sm text-emerald-700 mb-2">
+                  <span className="font-medium">Deducted from inventory:</span>
+                  <ul className="mt-1 space-y-0.5">
+                    {cookResult.deducted.map((item, i) => (
+                      <li key={i}>• {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {cookResult.not_found.length > 0 && (
+                <div className="text-sm text-amber-700">
+                  <span className="font-medium">Not in inventory:</span> {cookResult.not_found.join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-gray-100">
             <button
               onClick={handleMarkCooked}
-              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 flex items-center justify-center gap-2"
+              disabled={cooking}
+              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              <span>🍳</span>
-              I Made This
+              {cooking ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Updating inventory...
+                </>
+              ) : (
+                <>
+                  <span>🍳</span>
+                  I Made This
+                </>
+              )}
             </button>
             <button
               onClick={handleDelete}
@@ -298,6 +348,9 @@ export default function RecipeDetailPage() {
               {deleting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            Clicking &quot;I Made This&quot; will deduct ingredients from your inventory
+          </p>
         </div>
       </div>
     </div>

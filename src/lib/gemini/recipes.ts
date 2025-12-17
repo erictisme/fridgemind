@@ -236,6 +236,102 @@ export interface RecipeShoppingResult {
   assumed_pantry: string[]
 }
 
+// ============================================
+// 4. Parse Multiple Recipes from Bulk Text/URL
+// ============================================
+
+const BULK_RECIPE_PARSE_PROMPT = `You are a recipe assistant. The user has provided text that may contain MULTIPLE recipes (from a recipe website, cookbook page, or collection).
+
+Your task: Extract ALL distinct recipes from the text.
+
+Rules:
+- Look for recipe patterns: titles followed by ingredients and instructions
+- Each recipe should have: name, ingredients list, instructions
+- Recipes may be separated by headers, blank lines, or ingredient categories
+- Be thorough - don't miss any recipes
+- If text is organized by ingredient (e.g., "Asparagus Recipes", "Avocado Recipes"), extract each individual recipe
+- Estimate cooking time if not stated
+- Add relevant tags for each recipe
+
+Return ONLY valid JSON:
+{
+  "recipes": [
+    {
+      "name": "Recipe Name",
+      "description": "Brief description",
+      "ingredients": [
+        { "name": "ingredient", "quantity": "2", "unit": "cups", "optional": false }
+      ],
+      "instructions": "Step by step instructions...",
+      "estimated_time_minutes": 30,
+      "servings": 2,
+      "cuisine_type": "italian",
+      "tags": ["quick", "vegetarian"]
+    }
+  ],
+  "total_found": 5,
+  "confidence": 0.85
+}
+
+Do not include any text before or after the JSON.`
+
+export interface BulkParseResult {
+  recipes: ParsedRecipe[]
+  total_found: number
+  confidence: number
+}
+
+export async function parseBulkRecipes(text: string): Promise<BulkParseResult> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const prompt = `${BULK_RECIPE_PARSE_PROMPT}
+
+Text containing recipes:
+"""
+${text.slice(0, 30000)}
+"""` // Limit to 30k chars to avoid token limits
+
+  const result = await model.generateContent(prompt)
+  const response = await result.response
+  const responseText = response.text()
+
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON object found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    const recipes: ParsedRecipe[] = (parsed.recipes || []).map((recipe: ParsedRecipe) => ({
+      is_recipe: true,
+      name: recipe.name || 'Untitled Recipe',
+      description: recipe.description || null,
+      ingredients: (recipe.ingredients || []).map((ing: RecipeIngredient) => ({
+        name: ing.name || 'Unknown',
+        quantity: ing.quantity ?? '',
+        unit: ing.unit || '',
+        optional: ing.optional || false,
+      })),
+      instructions: recipe.instructions || null,
+      estimated_time_minutes: typeof recipe.estimated_time_minutes === 'number' ? recipe.estimated_time_minutes : null,
+      servings: typeof recipe.servings === 'number' ? recipe.servings : 2,
+      cuisine_type: recipe.cuisine_type || null,
+      tags: Array.isArray(recipe.tags) ? recipe.tags : [],
+      confidence: parsed.confidence || 0.7,
+    }))
+
+    return {
+      recipes,
+      total_found: parsed.total_found || recipes.length,
+      confidence: parsed.confidence || 0.7,
+    }
+  } catch (err) {
+    console.error('Failed to parse bulk recipes:', responseText, err)
+    throw new Error('Failed to parse recipes from text')
+  }
+}
+
 export async function generateShoppingFromRecipe(
   ingredients: RecipeIngredient[],
   inventoryItems: string[]
