@@ -350,34 +350,59 @@ export interface MealSuggestionAI {
   priority_score: number
 }
 
+export interface MealSuggestionOptions {
+  recipeCount?: number // How many recipes to generate (1-5)
+  mustUseItems?: string[] // Items the user specifically wants to use
+}
+
 export async function generateMealSuggestions(
   inventoryItems: Array<{ name: string; expiry_date: string; quantity: number }>,
-  preferences?: string
+  preferences?: string,
+  options?: MealSuggestionOptions
 ): Promise<MealSuggestionAI[]> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
-  // Format inventory for prompt
+  const recipeCount = Math.min(5, Math.max(1, options?.recipeCount || 3))
+  const mustUseItems = options?.mustUseItems || []
+
+  // Format inventory for prompt - highlight must-use items
   const inventoryText = inventoryItems.map(item => {
     const daysUntil = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     const urgency = daysUntil <= 0 ? ' (EXPIRED!)' : daysUntil <= 2 ? ' (USE SOON!)' : daysUntil <= 5 ? ' (expiring soon)' : ''
-    return `- ${item.name} (qty: ${item.quantity})${urgency}`
+    const mustUse = mustUseItems.some(m => item.name.toLowerCase().includes(m.toLowerCase())) ? ' ⭐MUST USE' : ''
+    return `- ${item.name} (qty: ${item.quantity})${urgency}${mustUse}`
   }).join('\n')
 
   const preferencesText = preferences ? `\nUser preferences: ${preferences}` : ''
 
-  const prompt = `You are a creative home chef assistant. Generate 3-4 practical meal suggestions based on this inventory.
+  // Build priority instructions based on whether user selected items
+  let priorityInstructions: string
+  if (mustUseItems.length > 0) {
+    priorityInstructions = `PRIORITIES (CRITICAL):
+1. EVERY recipe MUST use at least one item marked "⭐MUST USE" - this is the user's primary goal
+2. Also try to use items marked "(EXPIRED!)" or "(USE SOON!)" when possible
+3. Create practical, realistic meals a home cook can make
+4. Minimize additional ingredients needed
+
+The user specifically wants to cook with: ${mustUseItems.join(', ')}
+Build recipes AROUND these ingredients.`
+  } else {
+    priorityInstructions = `PRIORITIES:
+1. USE items marked "(EXPIRED!)" or "(USE SOON!)" first - these are highest priority
+2. Create practical, realistic meals a home cook can make
+3. Minimize additional ingredients needed
+4. Variety in meal types and cuisines`
+  }
+
+  const prompt = `You are a creative home chef assistant. Generate exactly ${recipeCount} practical meal suggestion${recipeCount > 1 ? 's' : ''} based on this inventory.
 
 INVENTORY:
 ${inventoryText}
 ${preferencesText}
 
-PRIORITIES:
-1. USE items marked "(EXPIRED!)" or "(USE SOON!)" first - these are highest priority
-2. Create practical, realistic meals a home cook can make
-3. Minimize additional ingredients needed
-4. Variety in meal types and cuisines
+${priorityInstructions}
 
-Return ONLY valid JSON array:
+Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1 ? 's' : ''}:
 [
   {
     "name": "Meal Name",
@@ -388,7 +413,7 @@ Return ONLY valid JSON array:
     "ingredients_from_inventory": ["item1", "item2"],
     "additional_ingredients_needed": ["item3"],
     "expiring_items_used": ["items that are expiring soon"],
-    "priority_score": 0-100 (higher if uses expiring items)
+    "priority_score": 0-100 (higher if uses must-use/expiring items)
   }
 ]
 

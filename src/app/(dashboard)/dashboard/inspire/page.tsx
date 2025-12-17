@@ -54,6 +54,12 @@ interface MealSuggestion {
   priority_score: number
 }
 
+interface InventoryItem {
+  name: string
+  quantity: number
+  expiry_date: string
+}
+
 interface MealPlan {
   date: string
   meal: 'breakfast' | 'lunch' | 'dinner'
@@ -101,6 +107,13 @@ export default function InspirePage() {
   const [challengeMode, setChallengeMode] = useState(false)
   const [addingToList, setAddingToList] = useState<number | null>(null)
   const [addedSuccess, setAddedSuccess] = useState<number | null>(null)
+
+  // Ingredient selection for recipe generation
+  const [showIngredientPicker, setShowIngredientPicker] = useState(false)
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
+  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([])
+  const [recipeCount, setRecipeCount] = useState(3)
+  const [loadingInventory, setLoadingInventory] = useState(false)
 
   // Input state
   const [inputMode, setInputMode] = useState<InputMode>('none')
@@ -164,15 +177,63 @@ export default function InspirePage() {
     setMealPlan(plan)
   }
 
+  // Fetch inventory items for ingredient picker
+  const fetchInventoryItems = async () => {
+    setLoadingInventory(true)
+    try {
+      const response = await fetch('/api/inventory')
+      if (response.ok) {
+        const data = await response.json()
+        setInventoryItems(data.items || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch inventory:', err)
+    } finally {
+      setLoadingInventory(false)
+    }
+  }
+
+  // Open ingredient picker
+  const openIngredientPicker = async () => {
+    setShowIngredientPicker(true)
+    if (inventoryItems.length === 0) {
+      await fetchInventoryItems()
+    }
+  }
+
+  // Toggle ingredient selection
+  const toggleIngredient = (name: string) => {
+    setSelectedIngredients(prev =>
+      prev.includes(name)
+        ? prev.filter(n => n !== name)
+        : [...prev, name]
+    )
+  }
+
+  // Calculate days until expiry
+  const getDaysUntilExpiry = (expiryDate: string) => {
+    return Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  }
+
   const handleGenerateSuggestions = async (challenge = false) => {
     setShowSuggestions(true)
+    setShowIngredientPicker(false)
     setSuggestionsLoading(true)
     setError(null)
     setChallengeMode(challenge)
 
     try {
-      const url = challenge ? '/api/suggestions?challenge=true' : '/api/suggestions'
-      const response = await fetch(url)
+      // Use POST with options if we have selected ingredients
+      const response = await fetch('/api/suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mustUseItems: selectedIngredients,
+          recipeCount,
+          challenge,
+        }),
+      })
+
       if (!response.ok) {
         throw new Error('Failed to fetch suggestions')
       }
@@ -565,31 +626,170 @@ export default function InspirePage() {
       )}
 
       {/* Generate Recipes Section */}
-      {inputMode === 'none' && !previewRecipe && !showSuggestions && (
+      {inputMode === 'none' && !previewRecipe && !showSuggestions && !showIngredientPicker && (
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200 p-6 mb-6">
           <div className="flex items-start gap-4">
             <span className="text-3xl">🤖</span>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-gray-900">Generate Recipe Ideas</h2>
               <p className="text-sm text-gray-600 mt-1">
-                AI will suggest meals based on what&apos;s in your inventory, prioritizing items expiring soon.
+                AI will suggest meals based on what&apos;s in your inventory.
               </p>
-              <div className="flex gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-4">
                 <button
-                  onClick={() => handleGenerateSuggestions(false)}
+                  onClick={openIngredientPicker}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
                 >
-                  Generate Ideas
+                  🍳 What to Cook?
                 </button>
                 <button
                   onClick={() => handleGenerateSuggestions(true)}
                   className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200"
                 >
-                  🎲 Try Something New
+                  🎲 Surprise Me
                 </button>
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Ingredient Picker */}
+      {showIngredientPicker && (
+        <div className="bg-white rounded-xl border-2 border-emerald-200 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">What do you want to cook with?</h2>
+              <p className="text-sm text-gray-500">Select items to use up, or leave empty to auto-prioritize expiring items</p>
+            </div>
+            <button
+              onClick={() => setShowIngredientPicker(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+
+          {/* Recipe count selector */}
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+            <label className="text-sm font-medium text-gray-700 block mb-2">
+              How many recipe ideas? ({recipeCount})
+            </label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setRecipeCount(n)}
+                  className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                    recipeCount === n
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:border-emerald-400'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Ingredient list */}
+          {loadingInventory ? (
+            <div className="text-center py-8">
+              <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto"></div>
+              <p className="text-sm text-gray-500 mt-2">Loading inventory...</p>
+            </div>
+          ) : inventoryItems.length === 0 ? (
+            <div className="text-center py-8">
+              <span className="text-3xl mb-2 block">📦</span>
+              <p className="text-gray-600">No items in inventory</p>
+              <p className="text-sm text-gray-400">Add items to your inventory first</p>
+            </div>
+          ) : (
+            <>
+              {selectedIngredients.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <span className="text-sm text-gray-500">Selected:</span>
+                  {selectedIngredients.map(name => (
+                    <span
+                      key={name}
+                      className="text-sm bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full flex items-center gap-1"
+                    >
+                      {name}
+                      <button
+                        onClick={() => toggleIngredient(name)}
+                        className="text-emerald-500 hover:text-emerald-700"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    onClick={() => setSelectedIngredients([])}
+                    className="text-sm text-gray-400 hover:text-gray-600"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+
+              <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                {inventoryItems.map((item, index) => {
+                  const days = getDaysUntilExpiry(item.expiry_date)
+                  const isSelected = selectedIngredients.includes(item.name)
+                  const isUrgent = days <= 2
+                  const isExpiringSoon = days <= 5
+
+                  return (
+                    <label
+                      key={index}
+                      className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0 ${
+                        isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleIngredient(item.name)}
+                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className={`flex-1 ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+                        {item.name}
+                      </span>
+                      <span className="text-sm text-gray-400">×{item.quantity}</span>
+                      {isUrgent ? (
+                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                          {days <= 0 ? 'Expired!' : `${days}d left`}
+                        </span>
+                      ) : isExpiringSoon ? (
+                        <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">
+                          {days}d left
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">{days}d</span>
+                      )}
+                    </label>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Generate button */}
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => handleGenerateSuggestions(false)}
+              disabled={inventoryItems.length === 0}
+              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Generate {recipeCount} Recipe{recipeCount > 1 ? 's' : ''}
+              {selectedIngredients.length > 0 && ` using ${selectedIngredients.length} item${selectedIngredients.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            {selectedIngredients.length === 0
+              ? 'Will prioritize items expiring soon'
+              : 'Will build recipes around your selected items'}
+          </p>
         </div>
       )}
 
