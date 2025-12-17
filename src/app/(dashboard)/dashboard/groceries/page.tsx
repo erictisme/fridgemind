@@ -15,6 +15,13 @@ interface Receipt {
   created_at: string
 }
 
+// Helper to check if receipt date seems auto-generated (same as upload date)
+const isDateEstimated = (receipt: Receipt): boolean => {
+  const receiptDate = new Date(receipt.receipt_date).toDateString()
+  const createdDate = new Date(receipt.created_at).toDateString()
+  return receiptDate === createdDate
+}
+
 interface ReceiptItem {
   name: string
   quantity: number
@@ -513,9 +520,12 @@ export default function HistoryPage() {
   }
 
   // Import receipt to inventory functions
+  const [receiptItemsHint, setReceiptItemsHint] = useState<string | null>(null)
+
   const openImportModal = async (receipt: Receipt) => {
     setImportingReceipt(receipt)
     setLoadingReceiptItems(true)
+    setReceiptItemsHint(null)
     try {
       // Fetch items for this specific receipt
       const res = await fetch(`/api/receipts/${receipt.id}/items`)
@@ -525,6 +535,9 @@ export default function HistoryPage() {
           ...item,
           selected: item.category !== 'household', // Auto-select non-household items
         })))
+        if (data.hint) {
+          setReceiptItemsHint(data.hint)
+        }
       }
     } catch (error) {
       console.error('Error fetching receipt items:', error)
@@ -535,6 +548,7 @@ export default function HistoryPage() {
   const closeImportModal = () => {
     setImportingReceipt(null)
     setReceiptItems([])
+    setReceiptItemsHint(null)
     setImportLocation('fridge')
   }
 
@@ -1385,6 +1399,11 @@ Total: $14.90"
                         month: 'short',
                         day: 'numeric',
                       })}
+                      {isDateEstimated(receipt) && (
+                        <span className="ml-1 text-amber-500" title="Date may be upload date, not receipt date">
+                          (?)
+                        </span>
+                      )}
                       {receipt.payment_method && ` • ${receipt.payment_method}`}
                     </div>
                   </div>
@@ -1460,7 +1479,15 @@ Total: $14.90"
                   <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
                 </div>
               ) : receiptItems.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No items found in this receipt</p>
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No items found in this receipt</p>
+                  {receiptItemsHint && (
+                    <p className="text-sm text-amber-600 mt-2">{receiptItemsHint}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">
+                    This may be an older receipt. Items were not saved during upload.
+                  </p>
+                </div>
               ) : (
                 <>
                   <div className="flex items-center justify-between">

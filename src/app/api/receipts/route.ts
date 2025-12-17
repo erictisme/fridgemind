@@ -135,13 +135,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Get receipts
+    // Get receipts - order by created_at (upload time) to show most recent uploads first
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: receipts, error } = await (supabase as any)
       .from('receipts')
       .select('*')
       .eq('user_id', user.id)
-      .order('receipt_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) {
