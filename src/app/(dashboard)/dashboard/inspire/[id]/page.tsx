@@ -39,6 +39,11 @@ export default function RecipeDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Shopping list state
+  const [selectedIngredients, setSelectedIngredients] = useState<Set<number>>(new Set())
+  const [addingToList, setAddingToList] = useState(false)
+  const [addedToList, setAddedToList] = useState(false)
+
   useEffect(() => {
     if (params.id) {
       fetchRecipe(params.id as string)
@@ -105,6 +110,63 @@ export default function RecipeDetailPage() {
     deducted: string[]
     not_found: string[]
   } | null>(null)
+
+  // Toggle ingredient selection
+  const toggleIngredient = (index: number) => {
+    setSelectedIngredients(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
+
+  // Select all ingredients
+  const selectAllIngredients = () => {
+    if (!recipe) return
+    setSelectedIngredients(new Set(recipe.ingredients.map((_, i) => i)))
+  }
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedIngredients(new Set())
+  }
+
+  // Add selected ingredients to shopping list
+  const handleAddToShoppingList = async () => {
+    if (!recipe || selectedIngredients.size === 0) return
+
+    setAddingToList(true)
+    try {
+      const itemsToAdd = Array.from(selectedIngredients).map(idx => {
+        const ing = recipe.ingredients[idx]
+        return {
+          name: ing.name,
+          quantity: typeof ing.quantity === 'number' ? ing.quantity : 1,
+          unit: ing.unit || null,
+        }
+      })
+
+      const response = await fetch('/api/shopping-list/bulk-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsToAdd }),
+      })
+
+      if (!response.ok) throw new Error('Failed to add items')
+
+      setAddedToList(true)
+      setSelectedIngredients(new Set())
+      setTimeout(() => setAddedToList(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add to shopping list')
+    } finally {
+      setAddingToList(false)
+    }
+  }
 
   const handleMarkCooked = async () => {
     if (!recipe) return
@@ -266,12 +328,45 @@ export default function RecipeDetailPage() {
           {/* Ingredients */}
           {recipe.ingredients.length > 0 && (
             <div className="mb-6">
-              <h2 className="font-semibold text-gray-900 mb-3">Ingredients</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-900">Ingredients</h2>
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    onClick={selectAllIngredients}
+                    className="text-emerald-600 hover:text-emerald-700"
+                  >
+                    Select all
+                  </button>
+                  {selectedIngredients.size > 0 && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <button
+                        onClick={clearSelection}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
               <ul className="space-y-2">
                 {recipe.ingredients.map((ing, i) => (
-                  <li key={i} className="flex items-start gap-2 text-gray-700">
-                    <span className="text-emerald-500 mt-0.5">•</span>
-                    <span>
+                  <li
+                    key={i}
+                    className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                      selectedIngredients.has(i) ? 'bg-emerald-50' : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => toggleIngredient(i)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIngredients.has(i)}
+                      onChange={() => toggleIngredient(i)}
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <span className="text-gray-700">
                       {ing.quantity && <span className="font-medium">{ing.quantity} </span>}
                       {ing.unit && <span>{ing.unit} </span>}
                       {ing.name}
@@ -280,6 +375,25 @@ export default function RecipeDetailPage() {
                   </li>
                 ))}
               </ul>
+
+              {/* Add to Shopping List button */}
+              {selectedIngredients.size > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  {addedToList ? (
+                    <div className="text-center text-emerald-600 font-medium py-2">
+                      ✓ Added to shopping list!
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleAddToShoppingList}
+                      disabled={addingToList}
+                      className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {addingToList ? 'Adding...' : `🛒 Add ${selectedIngredients.size} to Shopping List`}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

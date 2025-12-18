@@ -2,20 +2,6 @@
 
 import { useState, useEffect } from 'react'
 
-interface MealIngredient {
-  name: string
-  quantity: number
-  unit: string
-  category: string
-  reason?: string
-}
-
-interface MealSuggestionResult {
-  recipe_name: string
-  ingredients_needed: MealIngredient[]
-  already_have: string[]
-}
-
 interface Alternative {
   name: string
   reason: string
@@ -70,11 +56,6 @@ export default function ShoppingListPage() {
   const [newItemQuantity, setNewItemQuantity] = useState(1)
   const [newItemUnit, setNewItemUnit] = useState('')
   const [newItemCategory, setNewItemCategory] = useState<string>('')
-
-  // Meal-to-list state
-  const [mealInput, setMealInput] = useState('')
-  const [mealLoading, setMealLoading] = useState(false)
-  const [mealResult, setMealResult] = useState<MealSuggestionResult | null>(null)
 
   // Quick add (text dump) state
   const [quickAddText, setQuickAddText] = useState('')
@@ -205,66 +186,6 @@ export default function ShoppingListPage() {
       setItems(items.filter(i => !i.is_checked))
     } catch {
       setError('Failed to clear checked items')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Generate shopping list from meal idea
-  const handleGenerateFromMeal = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!mealInput.trim()) return
-
-    setMealLoading(true)
-    setMealResult(null)
-    setError(null)
-
-    try {
-      const response = await fetch('/api/shopping-list/from-meal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meal_description: mealInput.trim() }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to generate list')
-      }
-
-      const data = await response.json()
-      setMealResult(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate shopping list')
-    } finally {
-      setMealLoading(false)
-    }
-  }
-
-  // Add meal ingredients to shopping list
-  const handleAddMealItems = async () => {
-    if (!mealResult || mealResult.ingredients_needed.length === 0) return
-
-    setSaving(true)
-    try {
-      const response = await fetch('/api/shopping-list/from-meal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          meal_description: mealInput.trim(),
-          add_to_list: true,
-        }),
-      })
-
-      if (!response.ok) throw new Error('Failed to add items')
-
-      // Refresh list to show new items
-      await fetchShoppingList()
-
-      // Clear meal input and result
-      setMealInput('')
-      setMealResult(null)
-    } catch {
-      setError('Failed to add items to list')
     } finally {
       setSaving(false)
     }
@@ -433,108 +354,6 @@ export default function ShoppingListPage() {
           </button>
         </div>
       )}
-
-      {/* What to Cook - AI Shopping List Generator */}
-      <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
-          <span className="text-xl">🍳</span>
-          What do you want to cook?
-        </h2>
-        <p className="text-sm text-gray-600 mb-3">
-          Tell us what you want to make and we&apos;ll generate a shopping list based on what you already have.
-        </p>
-
-        <form onSubmit={handleGenerateFromMeal} className="space-y-3">
-          <input
-            type="text"
-            value={mealInput}
-            onChange={(e) => setMealInput(e.target.value)}
-            placeholder="e.g., Roast vegetables with tofu, Chicken stir fry, Pasta carbonara..."
-            className="w-full px-4 py-3 border border-purple-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-            disabled={mealLoading}
-          />
-          <button
-            type="submit"
-            disabled={!mealInput.trim() || mealLoading}
-            className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {mealLoading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Generating...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Generate Shopping List
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Meal Result */}
-        {mealResult && (
-          <div className="mt-4 p-4 bg-white rounded-lg border border-purple-100">
-            <h3 className="font-semibold text-gray-900 mb-2">{mealResult.recipe_name}</h3>
-
-            {mealResult.already_have.length > 0 && (
-              <div className="mb-3">
-                <p className="text-sm text-gray-500 mb-1">You already have:</p>
-                <div className="flex flex-wrap gap-1">
-                  {mealResult.already_have.map((item, i) => (
-                    <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {mealResult.ingredients_needed.length > 0 ? (
-              <>
-                <p className="text-sm text-gray-500 mb-2">You&apos;ll need to buy:</p>
-                <div className="space-y-2 mb-4">
-                  {mealResult.ingredients_needed.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{categoryEmojis[item.category] || '📦'}</span>
-                        <span className="font-medium text-gray-900">{item.name}</span>
-                        <span className="text-gray-500">
-                          ({item.quantity} {item.unit})
-                        </span>
-                      </div>
-                      {item.reason && (
-                        <span className="text-gray-400 text-xs">{item.reason}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleAddMealItems}
-                    disabled={saving}
-                    className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {saving ? 'Adding...' : `Add ${mealResult.ingredients_needed.length} items to list`}
-                  </button>
-                  <button
-                    onClick={() => setMealResult(null)}
-                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-emerald-600 font-medium">
-                You have everything you need! No shopping required.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Quick Add - Text Dump */}
       <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 p-4">
