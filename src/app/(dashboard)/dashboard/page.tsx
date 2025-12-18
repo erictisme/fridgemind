@@ -216,7 +216,7 @@ export default function DashboardPage() {
           <LifecycleButton href="/dashboard/shopping-list" icon="🛒" label="Shop" />
           <LifecycleButton href="/dashboard/groceries?tab=upload" icon="📦" label="Store" />
           <LifecycleButton href="/dashboard/suggestions" icon="🍳" label="Cook" />
-          <LifecycleButton href="/dashboard/inventory" icon="🍽️" label="Eat" />
+          <LifecycleButton href="/dashboard/log-meal" icon="🍽️" label="Eat" />
         </div>
       </div>
 
