@@ -31,6 +31,21 @@ interface EatingOutData {
   eaten_at: string
 }
 
+interface ReceiptData {
+  id: string
+  store_name: string | null
+  total: number
+  receipt_date: string
+}
+
+interface ReceiptItemData {
+  id: string
+  item_name: string
+  category: string | null
+  quantity: number
+  total_price: number
+}
+
 // GET - Generate Cooking Wrapped insights
 export async function GET() {
   try {
@@ -41,22 +56,26 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all cooking data
+    // Fetch all cooking data including receipts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [recipesResult, cookedMealsResult, eatingOutResult, inventoryResult] = await Promise.all([
+    const [recipesResult, cookedMealsResult, eatingOutResult, inventoryResult, receiptsResult, receiptItemsResult] = await Promise.all([
       (supabase as any).from('saved_recipes').select('*').eq('user_id', user.id),
       (supabase as any).from('cooked_meals').select('*').eq('user_id', user.id),
       (supabase as any).from('eating_out_logs').select('*').eq('user_id', user.id),
       (supabase as any).from('inventory_items').select('*').eq('user_id', user.id),
+      (supabase as any).from('receipts').select('*').eq('user_id', user.id),
+      (supabase as any).from('receipt_items').select('*').eq('user_id', user.id),
     ])
 
     const recipes: RecipeData[] = recipesResult.data || []
     const cookedMeals: CookedMealData[] = cookedMealsResult.data || []
     const eatingOut: EatingOutData[] = eatingOutResult.data || []
     const inventoryItems = inventoryResult.data || []
+    const receipts: ReceiptData[] = receiptsResult.data || []
+    const receiptItems: ReceiptItemData[] = receiptItemsResult.data || []
 
     // Calculate statistics
-    const stats = calculateStats(recipes, cookedMeals, eatingOut, inventoryItems)
+    const stats = calculateStats(recipes, cookedMeals, eatingOut, inventoryItems, receipts, receiptItems)
 
     // Generate AI insights
     const aiInsights = await generateAIInsights(stats)
@@ -80,20 +99,31 @@ function calculateStats(
   recipes: RecipeData[],
   cookedMeals: CookedMealData[],
   eatingOut: EatingOutData[],
-  inventoryItems: Array<{ name: string; category?: string }>
+  inventoryItems: Array<{ name: string; category?: string }>,
+  receipts: ReceiptData[],
+  receiptItems: ReceiptItemData[]
 ) {
-  // Total meals cooked (from recipes + logged meals)
+  // Total meals cooked - estimate from receipts if no cooking data
   const totalFromRecipes = recipes.reduce((sum, r) => sum + (r.times_cooked || 0), 0)
   const totalLoggedMeals = cookedMeals.length
-  const totalMealsCooked = totalFromRecipes + totalLoggedMeals
+
+  // Estimate meals from grocery trips (assume ~7 meals per grocery trip)
+  const groceryTrips = receipts.length
+  const estimatedMealsFromGroceries = groceryTrips * 7
+
+  const totalMealsCooked = totalFromRecipes + totalLoggedMeals > 0
+    ? totalFromRecipes + totalLoggedMeals
+    : estimatedMealsFromGroceries
   const totalEatingOut = eatingOut.length
 
-  // Time spent cooking (estimate based on recipe times)
-  const totalMinutesCooked = recipes.reduce((sum, r) => {
-    const timesCooked = r.times_cooked || 0
-    const timePerCook = r.estimated_time_minutes || 30 // default 30 min
-    return sum + (timesCooked * timePerCook)
-  }, 0)
+  // Time spent cooking (estimate: 30 min per estimated meal if no recipe data)
+  const totalMinutesCooked = totalFromRecipes > 0
+    ? recipes.reduce((sum, r) => {
+        const timesCooked = r.times_cooked || 0
+        const timePerCook = r.estimated_time_minutes || 30
+        return sum + (timesCooked * timePerCook)
+      }, 0)
+    : estimatedMealsFromGroceries * 30
   const totalHoursCooked = Math.round(totalMinutesCooked / 60)
 
   // Most cooked recipes (top 5)
@@ -120,7 +150,22 @@ function calculateStats(
     .slice(0, 5)
     .map(([cuisine, count]) => ({ cuisine, count }))
 
-  // Ingredient frequency
+  // Top purchased items from receipts
+  const itemCounts: Record<string, { count: number; spent: number }> = {}
+  receiptItems.forEach(item => {
+    const name = item.item_name.toLowerCase()
+    if (!itemCounts[name]) {
+      itemCounts[name] = { count: 0, spent: 0 }
+    }
+    itemCounts[name].count += item.quantity || 1
+    itemCounts[name].spent += item.total_price || 0
+  })
+  const topPurchasedItems = Object.entries(itemCounts)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 15)
+    .map(([name, data]) => ({ name, count: data.count, spent: Math.round(data.spent * 100) / 100 }))
+
+  // Ingredient frequency from recipes (fallback to purchased items)
   const ingredientCounts: Record<string, number> = {}
   recipes.forEach(r => {
     const timesCooked = r.times_cooked || 0
@@ -131,10 +176,13 @@ function calculateStats(
       })
     }
   })
-  const topIngredients = Object.entries(ingredientCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([ingredient, count]) => ({ ingredient, count }))
+  // If no recipe ingredients, use purchased items
+  const topIngredients = Object.keys(ingredientCounts).length > 0
+    ? Object.entries(ingredientCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([ingredient, count]) => ({ ingredient, count }))
+    : topPurchasedItems.slice(0, 10).map(item => ({ ingredient: item.name, count: item.count }))
 
   // Cooking methods from logged meals
   const methodCounts: Record<string, number> = {}
@@ -147,6 +195,32 @@ function calculateStats(
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([method, count]) => ({ method, count }))
+
+  // Category breakdown from receipts
+  const categorySpending: Record<string, number> = {}
+  receiptItems.forEach(item => {
+    const category = item.category || 'other'
+    categorySpending[category] = (categorySpending[category] || 0) + (item.total_price || 0)
+  })
+  const topCategories = Object.entries(categorySpending)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([category, spent]) => ({ category, spent: Math.round(spent * 100) / 100 }))
+
+  // Store breakdown
+  const storeCounts: Record<string, { visits: number; spent: number }> = {}
+  receipts.forEach(r => {
+    const store = r.store_name || 'Unknown'
+    if (!storeCounts[store]) {
+      storeCounts[store] = { visits: 0, spent: 0 }
+    }
+    storeCounts[store].visits += 1
+    storeCounts[store].spent += r.total || 0
+  })
+  const topStores = Object.entries(storeCounts)
+    .sort((a, b) => b[1].visits - a[1].visits)
+    .slice(0, 5)
+    .map(([store, data]) => ({ store, visits: data.visits, spent: Math.round(data.spent * 100) / 100 }))
 
   // Tags/dietary preferences
   const tagCounts: Record<string, number> = {}
@@ -168,6 +242,10 @@ function calculateStats(
   // Recipe collection size
   const totalRecipesSaved = recipes.length
 
+  // Total spending
+  const totalSpent = receipts.reduce((sum, r) => sum + (r.total || 0), 0)
+  const avgPerTrip = groceryTrips > 0 ? Math.round(totalSpent / groceryTrips * 100) / 100 : 0
+
   // Inventory diversity
   const inventoryCategories: Record<string, number> = {}
   inventoryItems.forEach(item => {
@@ -178,18 +256,21 @@ function calculateStats(
   // Eating habits ratio
   const homeCookedRatio = totalMealsCooked > 0 || totalEatingOut > 0
     ? Math.round((totalMealsCooked / (totalMealsCooked + totalEatingOut)) * 100)
-    : 0
+    : (groceryTrips > 0 ? 85 : 0) // Assume 85% home cooked if they grocery shop
 
   // Average cooking time
   const avgCookingTime = totalFromRecipes > 0
     ? Math.round(totalMinutesCooked / totalFromRecipes)
-    : 0
+    : 30 // Default estimate
 
   // Unique cuisines tried
   const uniqueCuisines = new Set([
     ...recipes.filter(r => r.cuisine_type && r.times_cooked > 0).map(r => r.cuisine_type),
     ...cookedMeals.filter(m => m.cuisine_type).map(m => m.cuisine_type),
   ])
+
+  // Unique items purchased
+  const uniqueItemsPurchased = new Set(receiptItems.map(i => i.item_name.toLowerCase())).size
 
   return {
     totalMealsCooked,
@@ -206,6 +287,15 @@ function calculateStats(
     favorites,
     uniqueCuisineCount: uniqueCuisines.size,
     inventoryCategories,
+    // New receipt-based stats
+    groceryTrips,
+    totalSpent,
+    avgPerTrip,
+    topPurchasedItems,
+    topCategories,
+    topStores,
+    uniqueItemsPurchased,
+    totalItemsPurchased: receiptItems.reduce((sum, i) => sum + (i.quantity || 1), 0),
   }
 }
 
@@ -215,28 +305,44 @@ async function generateAIInsights(stats: ReturnType<typeof calculateStats>) {
 
     const prompt = `You are a fun, insightful food personality analyst for a "Cooking Wrapped 2025" feature (like Spotify Wrapped but for cooking).
 
-Based on this cooking data, generate personalized insights. Be specific, fun, and use the actual data. Use emojis sparingly but effectively.
+Based on this cooking and grocery data, generate personalized insights. Be specific, fun, and use the actual data. Use emojis sparingly but effectively.
 
-COOKING DATA:
-- Total meals cooked at home: ${stats.totalMealsCooked}
+COOKING & GROCERY DATA:
+- Estimated meals cooked at home: ${stats.totalMealsCooked}
 - Times ate out: ${stats.totalEatingOut}
 - Home cooking ratio: ${stats.homeCookedRatio}%
-- Total hours spent cooking: ${stats.totalHoursCooked}
+- Total hours spent cooking (estimated): ${stats.totalHoursCooked}
 - Average cooking time per meal: ${stats.avgCookingTime} minutes
 - Recipes saved: ${stats.totalRecipesSaved}
 - Unique cuisines tried: ${stats.uniqueCuisineCount}
 
+GROCERY SHOPPING:
+- Total grocery trips: ${stats.groceryTrips}
+- Total spent on groceries: $${stats.totalSpent.toFixed(2)}
+- Average per trip: $${stats.avgPerTrip.toFixed(2)}
+- Unique items purchased: ${stats.uniqueItemsPurchased}
+- Total items bought: ${stats.totalItemsPurchased}
+
+Top purchased items (what they actually buy):
+${stats.topPurchasedItems.slice(0, 10).map((i, idx) => `${idx + 1}. ${i.name} (${i.count}x, $${i.spent})`).join('\n')}
+
+Favorite stores:
+${stats.topStores.map(s => `- ${s.store}: ${s.visits} visits, $${s.spent} spent`).join('\n')}
+
+Spending by category:
+${stats.topCategories.map(c => `- ${c.category}: $${c.spent}`).join('\n')}
+
 Top 5 most cooked recipes:
-${stats.topRecipes.map((r, i) => `${i + 1}. ${r.name} (${r.times} times) - ${r.cuisine || 'Unknown cuisine'}`).join('\n')}
+${stats.topRecipes.length > 0 ? stats.topRecipes.map((r, i) => `${i + 1}. ${r.name} (${r.times} times) - ${r.cuisine || 'Unknown cuisine'}`).join('\n') : 'No recipes tracked yet'}
 
 Top cuisines:
-${stats.topCuisines.map(c => `- ${c.cuisine}: ${c.count} times`).join('\n')}
+${stats.topCuisines.length > 0 ? stats.topCuisines.map(c => `- ${c.cuisine}: ${c.count} times`).join('\n') : 'Not tracked yet'}
 
-Most used ingredients:
-${stats.topIngredients.slice(0, 7).map(i => `- ${i.ingredient}: ${i.count} uses`).join('\n')}
+Most used ingredients (from recipes or purchases):
+${stats.topIngredients.slice(0, 7).map(i => `- ${i.ingredient}: ${i.count} uses/purchases`).join('\n')}
 
 Cooking methods used:
-${stats.topMethods.map(m => `- ${m.method}: ${m.count} times`).join('\n')}
+${stats.topMethods.length > 0 ? stats.topMethods.map(m => `- ${m.method}: ${m.count} times`).join('\n') : 'Not tracked yet'}
 
 Favorite recipes: ${stats.favorites.join(', ') || 'None marked'}
 

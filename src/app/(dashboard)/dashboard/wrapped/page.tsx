@@ -19,6 +19,15 @@ interface WrappedData {
     topTags: Array<{ tag: string; count: number }>
     favorites: string[]
     uniqueCuisineCount: number
+    // Receipt-based stats
+    groceryTrips: number
+    totalSpent: number
+    avgPerTrip: number
+    topPurchasedItems: Array<{ name: string; count: number; spent: number }>
+    topCategories: Array<{ category: string; spent: number }>
+    topStores: Array<{ store: string; visits: number; spent: number }>
+    uniqueItemsPurchased: number
+    totalItemsPurchased: number
   }
   insights: {
     foodPersonality: {
@@ -129,6 +138,60 @@ export default function CookingWrappedPage() {
     )
   }
 
+  // Check if user has enough data (including grocery trips from receipts)
+  const hasEnoughData = data.stats.totalMealsCooked > 0 || data.stats.totalRecipesSaved > 2 || data.stats.groceryTrips > 0
+
+  if (!hasEnoughData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-black p-6">
+        <div className="text-center max-w-md">
+          <span className="text-8xl mb-6 block">👨‍🍳</span>
+          <h1 className="text-3xl font-bold text-white mb-4">Your Cooking Journey Awaits!</h1>
+          <p className="text-white/70 mb-6 text-lg">
+            Start cooking with FridgeMind to unlock your personalized Cooking Wrapped!
+          </p>
+          <div className="bg-white/10 rounded-2xl p-6 mb-6 text-left space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📚</span>
+              <div>
+                <p className="text-white font-medium">Save some recipes</p>
+                <p className="text-white/60 text-sm">Build your recipe collection</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🍳</span>
+              <div>
+                <p className="text-white font-medium">Cook & track meals</p>
+                <p className="text-white/60 text-sm">Click &quot;I Made This&quot; when you cook</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎁</span>
+              <div>
+                <p className="text-white font-medium">Come back for insights</p>
+                <p className="text-white/60 text-sm">See your food personality & stats</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <Link
+              href="/dashboard/inspire"
+              className="block w-full py-3 bg-white text-purple-600 rounded-xl font-bold hover:bg-white/90"
+            >
+              Start Adding Recipes
+            </Link>
+            <Link
+              href="/dashboard"
+              className="block w-full py-3 bg-white/20 text-white rounded-xl font-medium hover:bg-white/30"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Build cards array
   const cards = [
     // Card 1: Welcome / Total meals
@@ -165,7 +228,93 @@ export default function CookingWrappedPage() {
         </div>
       ),
     },
-    // Card 3: Food Personality
+    // Card 3: Grocery Shopping Overview
+    {
+      gradient: CARD_GRADIENTS[4],
+      content: (
+        <div className="text-center">
+          <p className="text-white/70 text-lg mb-4">This year you made</p>
+          <p className="text-8xl font-black text-white mb-2">{data.stats.groceryTrips}</p>
+          <p className="text-white/80 text-2xl mb-6">grocery trips</p>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="bg-white/10 rounded-2xl p-4">
+              <p className="text-3xl font-bold text-white">${data.stats.totalSpent.toFixed(0)}</p>
+              <p className="text-white/60 text-sm">total spent</p>
+            </div>
+            <div className="bg-white/10 rounded-2xl p-4">
+              <p className="text-3xl font-bold text-white">${data.stats.avgPerTrip.toFixed(0)}</p>
+              <p className="text-white/60 text-sm">avg per trip</p>
+            </div>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-4 mt-3">
+            <p className="text-2xl font-bold text-white">{data.stats.uniqueItemsPurchased}</p>
+            <p className="text-white/60 text-sm">unique items bought</p>
+          </div>
+        </div>
+      ),
+    },
+    // Card 4: Top Purchases
+    {
+      gradient: CARD_GRADIENTS[5],
+      content: (
+        <div>
+          <p className="text-white/70 text-lg mb-4 text-center">Your most purchased items</p>
+          <div className="space-y-2">
+            {data.stats.topPurchasedItems.slice(0, 8).map((item, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 bg-white/10 rounded-xl px-3 py-2 ${
+                  i === 0 ? 'bg-white/20 scale-105' : ''
+                }`}
+              >
+                <span className="text-2xl font-black text-white/50 w-8">#{i + 1}</span>
+                <div className="flex-1">
+                  <p className="text-white font-medium capitalize">{item.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-white">{item.count}x</p>
+                  <p className="text-white/50 text-xs">${item.spent.toFixed(0)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    // Card 5: Favorite Stores
+    {
+      gradient: CARD_GRADIENTS[6],
+      content: (
+        <div className="text-center">
+          <p className="text-white/70 text-lg mb-6">Your favorite stores</p>
+          <div className="space-y-3">
+            {data.stats.topStores.slice(0, 4).map((store, i) => (
+              <div
+                key={i}
+                className={`bg-white/10 rounded-xl p-4 ${i === 0 ? 'bg-white/20 border-2 border-white/30' : ''}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <p className={`text-white font-bold ${i === 0 ? 'text-xl' : 'text-lg'}`}>{store.store}</p>
+                    <p className="text-white/60 text-sm">{store.visits} visits</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white font-bold">${store.spent.toFixed(0)}</p>
+                    <p className="text-white/50 text-xs">spent</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {data.stats.topStores[0] && (
+            <p className="text-white/60 text-sm mt-4">
+              {data.stats.topStores[0].store} is your go-to spot!
+            </p>
+          )}
+        </div>
+      ),
+    },
+    // Card 6: Food Personality
     {
       gradient: CARD_GRADIENTS[2],
       content: (
