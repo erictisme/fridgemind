@@ -113,6 +113,27 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      {/* Cooking Wrapped 2025 Banner */}
+      <Link href="/dashboard/wrapped" className="block">
+        <div className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 rounded-2xl p-5 text-white relative overflow-hidden hover:shadow-lg transition-shadow">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iYSIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVHJhbnNmb3JtPSJyb3RhdGUoNDUpIj48cGF0aCBkPSJNLTEwIDMwaDYwdi0ySDAtMTB6IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjYSkiLz48L3N2Zz4=')] opacity-30"></div>
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-white/80 text-sm font-medium">Your year in cooking</p>
+              <h2 className="text-2xl font-black">Cooking Wrapped 2025</h2>
+              <p className="text-white/70 text-sm mt-1">See your food personality, top recipes & 2026 goals</p>
+            </div>
+            <div className="text-4xl">🎁</div>
+          </div>
+          <div className="mt-3 inline-flex items-center text-sm font-medium bg-white/20 rounded-full px-3 py-1">
+            View your Wrapped
+            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </Link>
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{greeting}</h1>

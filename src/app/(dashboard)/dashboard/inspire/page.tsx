@@ -62,7 +62,21 @@ interface InventoryItem {
   expiry_date: string
 }
 
+interface PlannedRecipe {
+  recipe_id: string
+  recipe_name: string
+  servings: number
+  position: number
+}
+
 interface MealPlan {
+  date: string
+  meal: 'breakfast' | 'lunch' | 'dinner'
+  recipes: PlannedRecipe[]
+}
+
+// Legacy format for migration
+interface LegacyMealPlan {
   date: string
   meal: 'breakfast' | 'lunch' | 'dinner'
   recipe_id: string
@@ -159,6 +173,16 @@ export default function InspirePage() {
   const [draggedRecipe, setDraggedRecipe] = useState<SavedRecipe | null>(null)
   const weekDates = getWeekDates()
 
+  // Week inventory check state
+  const [checkingWeekInventory, setCheckingWeekInventory] = useState(false)
+  const [weekInventoryCheck, setWeekInventoryCheck] = useState<{
+    total_shortages: Array<{ name: string; quantity: number; unit: string | null }>
+    has_shortages: boolean
+  } | null>(null)
+  const [weekShortageSelections, setWeekShortageSelections] = useState<Set<number>>(new Set())
+  const [addingWeekShortages, setAddingWeekShortages] = useState(false)
+  const [weekShortagesAdded, setWeekShortagesAdded] = useState(false)
+
   useEffect(() => {
     fetchRecipes()
     loadMealPlan()
@@ -198,7 +222,28 @@ export default function InspirePage() {
     const saved = localStorage.getItem('fridgemind_meal_plan')
     if (saved) {
       try {
-        setMealPlan(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        // Migrate from old format (single recipe_id) to new format (recipes array)
+        const migrated = parsed.map((plan: MealPlan | LegacyMealPlan) => {
+          // Check if this is the old format (has recipe_id directly)
+          if ('recipe_id' in plan && !('recipes' in plan)) {
+            const legacy = plan as LegacyMealPlan
+            return {
+              date: legacy.date,
+              meal: legacy.meal,
+              recipes: [{
+                recipe_id: legacy.recipe_id,
+                recipe_name: legacy.recipe_name,
+                servings: 2, // Default servings
+                position: 0,
+              }],
+            } as MealPlan
+          }
+          return plan as MealPlan
+        })
+        setMealPlan(migrated)
+        // Save migrated format back
+        localStorage.setItem('fridgemind_meal_plan', JSON.stringify(migrated))
       } catch {
         // ignore
       }
@@ -498,8 +543,14 @@ export default function InspirePage() {
       })
 
       setRecipes(recipes.filter(r => r.id !== id))
-      // Also remove from meal plan
-      saveMealPlan(mealPlan.filter(m => m.recipe_id !== id))
+      // Also remove from meal plan - filter out recipes with this ID from all slots
+      const updatedMealPlan = mealPlan
+        .map(slot => ({
+          ...slot,
+          recipes: slot.recipes.filter(r => r.recipe_id !== id),
+        }))
+        .filter(slot => slot.recipes.length > 0) // Remove empty slots
+      saveMealPlan(updatedMealPlan)
     } catch {
       setError('Failed to delete recipe')
     }
@@ -606,18 +657,50 @@ export default function InspirePage() {
 
     const dateKey = formatDateKey(date)
 
-    // Remove existing meal at this slot if any
-    const filtered = mealPlan.filter(m => !(m.date === dateKey && m.meal === meal))
+    // Find existing slot or create new one
+    const existingSlotIndex = mealPlan.findIndex(m => m.date === dateKey && m.meal === meal)
 
-    // Add new meal
-    const newPlan: MealPlan = {
-      date: dateKey,
-      meal,
-      recipe_id: draggedRecipe.id,
-      recipe_name: draggedRecipe.name,
+    if (existingSlotIndex >= 0) {
+      // Add to existing slot
+      const existingSlot = mealPlan[existingSlotIndex]
+
+      // Check if recipe already in this slot
+      if (existingSlot.recipes.some(r => r.recipe_id === draggedRecipe.id)) {
+        setDraggedRecipe(null)
+        return
+      }
+
+      const newRecipe: PlannedRecipe = {
+        recipe_id: draggedRecipe.id,
+        recipe_name: draggedRecipe.name,
+        servings: draggedRecipe.servings || 2,
+        position: existingSlot.recipes.length,
+      }
+
+      const updatedSlot: MealPlan = {
+        ...existingSlot,
+        recipes: [...existingSlot.recipes, newRecipe],
+      }
+
+      const newPlan = [...mealPlan]
+      newPlan[existingSlotIndex] = updatedSlot
+      saveMealPlan(newPlan)
+    } else {
+      // Create new slot
+      const newSlot: MealPlan = {
+        date: dateKey,
+        meal,
+        recipes: [{
+          recipe_id: draggedRecipe.id,
+          recipe_name: draggedRecipe.name,
+          servings: draggedRecipe.servings || 2,
+          position: 0,
+        }],
+      }
+
+      saveMealPlan([...mealPlan, newSlot])
     }
 
-    saveMealPlan([...filtered, newPlan])
     setDraggedRecipe(null)
   }
 
@@ -625,9 +708,123 @@ export default function InspirePage() {
     saveMealPlan(mealPlan.filter(m => !(m.date === date && m.meal === meal)))
   }
 
+  // Remove a single recipe from a meal slot
+  const handleRemoveMealRecipe = (date: string, meal: string, recipeId: string) => {
+    const slotIndex = mealPlan.findIndex(m => m.date === date && m.meal === meal)
+    if (slotIndex < 0) return
+
+    const slot = mealPlan[slotIndex]
+    const updatedRecipes = slot.recipes.filter(r => r.recipe_id !== recipeId)
+
+    if (updatedRecipes.length === 0) {
+      // Remove the entire slot if no recipes left
+      saveMealPlan(mealPlan.filter(m => !(m.date === date && m.meal === meal)))
+    } else {
+      // Update positions and save
+      const repositioned = updatedRecipes.map((r, i) => ({ ...r, position: i }))
+      const newPlan = [...mealPlan]
+      newPlan[slotIndex] = { ...slot, recipes: repositioned }
+      saveMealPlan(newPlan)
+    }
+  }
+
   const getMealForSlot = (date: Date, meal: string) => {
     const dateKey = formatDateKey(date)
     return mealPlan.find(m => m.date === dateKey && m.meal === meal)
+  }
+
+  // Check inventory for all planned meals
+  const handleCheckWeekInventory = async () => {
+    if (mealPlan.length === 0) return
+
+    setCheckingWeekInventory(true)
+    setWeekInventoryCheck(null)
+    setWeekShortageSelections(new Set())
+    setWeekShortagesAdded(false)
+
+    try {
+      // Collect all recipes from the meal plan
+      const recipesToCheck = mealPlan.flatMap(slot =>
+        slot.recipes.map(r => ({
+          recipe_id: r.recipe_id,
+          servings: r.servings,
+        }))
+      )
+
+      if (recipesToCheck.length === 0) {
+        setCheckingWeekInventory(false)
+        return
+      }
+
+      const response = await fetch('/api/meal-plan/check-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipes: recipesToCheck }),
+      })
+
+      if (!response.ok) throw new Error('Failed to check inventory')
+
+      const data = await response.json()
+
+      setWeekInventoryCheck({
+        total_shortages: data.total_shortages || [],
+        has_shortages: data.has_shortages || false,
+      })
+
+      // Auto-select all shortages
+      if (data.total_shortages?.length > 0) {
+        setWeekShortageSelections(new Set(data.total_shortages.map((_: unknown, i: number) => i)))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to check inventory')
+    } finally {
+      setCheckingWeekInventory(false)
+    }
+  }
+
+  // Toggle week shortage selection
+  const toggleWeekShortage = (idx: number) => {
+    setWeekShortageSelections(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) {
+        next.delete(idx)
+      } else {
+        next.add(idx)
+      }
+      return next
+    })
+  }
+
+  // Add week shortages to shopping list
+  const handleAddWeekShortages = async () => {
+    if (!weekInventoryCheck || weekShortageSelections.size === 0) return
+
+    setAddingWeekShortages(true)
+    try {
+      const itemsToAdd = Array.from(weekShortageSelections)
+        .map(idx => weekInventoryCheck.total_shortages[idx])
+        .map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+        }))
+
+      const response = await fetch('/api/shopping-list/bulk-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsToAdd }),
+      })
+
+      if (!response.ok) throw new Error('Failed to add items')
+
+      setWeekShortagesAdded(true)
+      setWeekShortageSelections(new Set())
+      setTimeout(() => setWeekShortagesAdded(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add to shopping list')
+    } finally {
+      setAddingWeekShortages(false)
+    }
   }
 
   const getSourceIcon = (sourceType: string) => {
@@ -639,14 +836,16 @@ export default function InspirePage() {
     }
   }
 
-  // Count meals planned
-  const mealsPlannedThisWeek = mealPlan.filter(m => {
-    const mealDate = new Date(m.date)
-    const today = new Date()
-    const weekFromNow = new Date(today)
-    weekFromNow.setDate(today.getDate() + 7)
-    return mealDate >= today && mealDate < weekFromNow
-  }).length
+  // Count meals planned (total recipes across all slots)
+  const mealsPlannedThisWeek = mealPlan
+    .filter(m => {
+      const mealDate = new Date(m.date)
+      const today = new Date()
+      const weekFromNow = new Date(today)
+      weekFromNow.setDate(today.getDate() + 7)
+      return mealDate >= today && mealDate < weekFromNow
+    })
+    .reduce((sum, m) => sum + m.recipes.length, 0)
 
   return (
     <div className="max-w-4xl mx-auto pb-20">
@@ -1417,15 +1616,92 @@ export default function InspirePage() {
               )}
             </p>
           </div>
-          {mealPlan.length > 0 && (
-            <button
-              onClick={() => saveMealPlan([])}
-              className="text-sm text-gray-400 hover:text-red-600"
-            >
-              Clear all
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {mealPlan.length > 0 && (
+              <>
+                <button
+                  onClick={handleCheckWeekInventory}
+                  disabled={checkingWeekInventory}
+                  className="text-sm px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 disabled:opacity-50"
+                >
+                  {checkingWeekInventory ? 'Checking...' : '🔍 Check Inventory'}
+                </button>
+                <button
+                  onClick={() => { saveMealPlan([]); setWeekInventoryCheck(null) }}
+                  className="text-sm text-gray-400 hover:text-red-600"
+                >
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Week inventory check results */}
+        {weekInventoryCheck && (
+          <div className={`mb-4 p-4 rounded-xl border ${
+            weekInventoryCheck.has_shortages
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-green-50 border-green-200'
+          }`}>
+            <h3 className="font-semibold mb-2">
+              {weekInventoryCheck.has_shortages
+                ? `⚠️ Missing ${weekInventoryCheck.total_shortages.length} Ingredient${weekInventoryCheck.total_shortages.length !== 1 ? 's' : ''}`
+                : '✅ All Ingredients Available'}
+            </h3>
+
+            {weekInventoryCheck.has_shortages && (
+              <>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto mb-3">
+                  {weekInventoryCheck.total_shortages.map((item, idx) => (
+                    <label
+                      key={idx}
+                      className={`flex items-center gap-2 p-2 bg-white rounded cursor-pointer transition-colors ${
+                        weekShortageSelections.has(idx) ? 'ring-2 ring-blue-300' : ''
+                      }`}
+                      onClick={() => toggleWeekShortage(idx)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={weekShortageSelections.has(idx)}
+                        onChange={() => toggleWeekShortage(idx)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="text-sm text-gray-700">
+                        {item.name}
+                        <span className="text-xs text-gray-400 ml-1">
+                          ({item.quantity}{item.unit ? ` ${item.unit}` : ''})
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                {weekShortagesAdded ? (
+                  <div className="text-center text-emerald-600 font-medium py-2">
+                    ✓ Added to shopping list!
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleAddWeekShortages}
+                    disabled={addingWeekShortages || weekShortageSelections.size === 0}
+                    className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 text-sm"
+                  >
+                    {addingWeekShortages ? 'Adding...' : `🛒 Add ${weekShortageSelections.size} to Shopping List`}
+                  </button>
+                )}
+              </>
+            )}
+
+            <button
+              onClick={() => setWeekInventoryCheck(null)}
+              className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         <p className="text-xs text-gray-400 mb-3">Drag recipes from below into meal slots</p>
 
@@ -1447,6 +1723,7 @@ export default function InspirePage() {
             {MEALS.map(meal => (
               weekDates.map((date, dayIndex) => {
                 const plannedMeal = getMealForSlot(date, meal)
+                const dateKey = formatDateKey(date)
 
                 return (
                   <div
@@ -1454,23 +1731,39 @@ export default function InspirePage() {
                     onDragOver={handleDragOver}
                     onDrop={() => handleDrop(date, meal)}
                     className={`min-h-[60px] rounded-lg border-2 border-dashed p-1 text-xs transition-colors ${
-                      plannedMeal
+                      plannedMeal && plannedMeal.recipes.length > 0
                         ? 'border-emerald-300 bg-emerald-50'
                         : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/50'
                     }`}
                   >
-                    {plannedMeal ? (
-                      <div className="relative group">
-                        <div className="font-medium text-gray-900 truncate pr-4">
-                          {plannedMeal.recipe_name}
+                    {plannedMeal && plannedMeal.recipes.length > 0 ? (
+                      <div className="space-y-1">
+                        {/* Meal label */}
+                        <div className="text-gray-400 capitalize text-[10px] font-medium">{meal}</div>
+                        {/* Stacked recipes */}
+                        {plannedMeal.recipes.map((recipe) => (
+                          <div
+                            key={recipe.recipe_id}
+                            className="relative group bg-white/70 rounded px-1.5 py-1 border border-emerald-200"
+                          >
+                            <div className="font-medium text-gray-900 truncate pr-4 text-[11px]">
+                              {recipe.recipe_name}
+                            </div>
+                            <div className="text-[9px] text-gray-400">
+                              {recipe.servings} srv
+                            </div>
+                            <button
+                              onClick={() => handleRemoveMealRecipe(dateKey, meal, recipe.recipe_id)}
+                              className="absolute top-0.5 right-0.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 text-sm leading-none"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        {/* Add more indicator */}
+                        <div className="text-[9px] text-emerald-500 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          + drop to add
                         </div>
-                        <div className="text-gray-400 capitalize">{meal}</div>
-                        <button
-                          onClick={() => handleRemoveMeal(plannedMeal.date, plannedMeal.meal)}
-                          className="absolute top-0 right-0 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100"
-                        >
-                          ×
-                        </button>
                       </div>
                     ) : (
                       <div className="text-gray-300 capitalize h-full flex items-center justify-center">
