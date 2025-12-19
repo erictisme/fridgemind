@@ -66,37 +66,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Save to eating_out_logs (we'll use this for all meals)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('eating_out_logs')
-        .insert({
-          user_id: user.id,
-          restaurant_name: 'Home', // Mark as home meal
-          meal_name: nutrition.meal_name,
-          meal_type: 'home_cooked',
-          estimated_calories: nutrition.estimated_calories,
-          protein_grams: nutrition.protein_grams,
-          carbs_grams: nutrition.carbs_grams,
-          fat_grams: nutrition.fat_grams,
-          fiber_grams: nutrition.fiber_grams,
-          vegetable_servings: nutrition.vegetable_servings,
-          detected_components: nutrition.detected_components,
-          health_assessment: nutrition.health_assessment,
-          ai_notes: nutrition.notes,
-          eaten_at: new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Save home meal error:', error)
-        return NextResponse.json({ error: 'Failed to save meal' }, { status: 500 })
-      }
-
+      // Return nutrition data - actual save happens via /api/log-meal/save after user confirms metadata
       return NextResponse.json({
         success: true,
-        meal: data,
         nutrition,
         inventory_updated: true,
         items_deducted: items.length,
@@ -104,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     } else if (type === 'out') {
       // Eating out - analyze photo
-      const { image, restaurant_name } = body
+      const { image } = body
 
       if (!image) {
         return NextResponse.json({ error: 'No image provided' }, { status: 400 })
@@ -123,77 +95,9 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      // Save to database - only include columns that exist
-      // Note: sodium_level, is_fried, contains_red_meat, contains_processed_food
-      // require migration 012_nutrition_analytics.sql to be applied
-      const insertData: Record<string, unknown> = {
-        user_id: user.id,
-        restaurant_name: restaurant_name || null,
-        meal_name: nutrition.meal_name,
-        meal_type: 'restaurant',
-        estimated_calories: nutrition.estimated_calories,
-        protein_grams: nutrition.protein_grams,
-        carbs_grams: nutrition.carbs_grams,
-        fat_grams: nutrition.fat_grams,
-        fiber_grams: nutrition.fiber_grams,
-        vegetable_servings: nutrition.vegetable_servings,
-        detected_components: nutrition.detected_components,
-        health_assessment: nutrition.health_assessment,
-        ai_notes: nutrition.notes,
-        eaten_at: new Date().toISOString(),
-      }
-
-      // Add red flag fields if they exist in the nutrition response
-      // These will only work after migration is applied
-      if (nutrition.sodium_level) insertData.sodium_level = nutrition.sodium_level
-      if (nutrition.is_fried !== undefined) insertData.is_fried = nutrition.is_fried
-      if (nutrition.contains_red_meat !== undefined) insertData.contains_red_meat = nutrition.contains_red_meat
-      if (nutrition.contains_processed_food !== undefined) insertData.contains_processed_food = nutrition.contains_processed_food
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let { data, error } = await (supabase as any)
-        .from('eating_out_logs')
-        .insert(insertData)
-        .select()
-        .single()
-
-      // If insert failed due to missing columns, retry without red flag fields
-      if (error && error.message?.includes('column')) {
-        console.warn('Insert failed, retrying without red flag columns:', error.message)
-        const basicInsertData = {
-          user_id: user.id,
-          restaurant_name: restaurant_name || null,
-          meal_name: nutrition.meal_name,
-          meal_type: 'restaurant',
-          estimated_calories: nutrition.estimated_calories,
-          protein_grams: nutrition.protein_grams,
-          carbs_grams: nutrition.carbs_grams,
-          fat_grams: nutrition.fat_grams,
-          fiber_grams: nutrition.fiber_grams,
-          vegetable_servings: nutrition.vegetable_servings,
-          detected_components: nutrition.detected_components,
-          health_assessment: nutrition.health_assessment,
-          ai_notes: nutrition.notes,
-          eaten_at: new Date().toISOString(),
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (supabase as any)
-          .from('eating_out_logs')
-          .insert(basicInsertData)
-          .select()
-          .single()
-        data = result.data
-        error = result.error
-      }
-
-      if (error) {
-        console.error('Save eating out error:', error)
-        return NextResponse.json({ error: 'Failed to save meal', details: error.message }, { status: 500 })
-      }
-
+      // Return nutrition data - actual save happens via /api/log-meal/save after user confirms metadata
       return NextResponse.json({
         success: true,
-        meal: data,
         nutrition,
       })
 

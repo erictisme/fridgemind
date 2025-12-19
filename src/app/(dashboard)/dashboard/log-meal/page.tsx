@@ -27,13 +27,27 @@ interface NutritionData {
   protein_grams: number
   carbs_grams: number
   fat_grams: number
+  fiber_grams: number
   vegetable_servings: number
   health_assessment: string
   notes: string
 }
 
-type MealType = 'home' | 'out'
+interface HouseholdMember {
+  id: string
+  name: string
+  portion: number // percentage 0-100
+}
+
+type MealSource = 'home' | 'out'
+type MealType = 'home' | 'out' // keep for backward compatibility
+type MealTime = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 type Step = 'choose' | 'select-items' | 'capture' | 'analyzing' | 'result'
+
+const HOUSEHOLD_MEMBERS: HouseholdMember[] = [
+  { id: 'eric', name: 'Eric', portion: 50 },
+  { id: 'yy', name: 'YY', portion: 50 },
+]
 
 const HEALTH_BADGES: Record<string, { label: string; color: string; emoji: string }> = {
   balanced: { label: 'Balanced', color: 'bg-green-100 text-green-700', emoji: '✅' },
@@ -68,6 +82,19 @@ export default function LogMealPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  // Meal metadata
+  const [mealDate, setMealDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [mealTime, setMealTime] = useState<MealTime>(() => {
+    const hour = new Date().getHours()
+    if (hour < 11) return 'breakfast'
+    if (hour < 15) return 'lunch'
+    if (hour < 21) return 'dinner'
+    return 'snack'
+  })
+  const [householdPortions, setHouseholdPortions] = useState<HouseholdMember[]>(HOUSEHOLD_MEMBERS)
+  const [divideBy, setDivideBy] = useState<number>(1) // For receipts - divide total by X people
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     fetchInventory()
@@ -292,6 +319,38 @@ export default function LogMealPage() {
     setImage(null)
     setNutrition(null)
     setError(null)
+    setMealDate(new Date().toISOString().split('T')[0])
+    const hour = new Date().getHours()
+    setMealTime(hour < 11 ? 'breakfast' : hour < 15 ? 'lunch' : hour < 21 ? 'dinner' : 'snack')
+    setHouseholdPortions(HOUSEHOLD_MEMBERS)
+    setDivideBy(1)
+  }
+
+  const updatePortions = (memberId: string, newPortion: number) => {
+    setHouseholdPortions(prev => prev.map(m =>
+      m.id === memberId ? { ...m, portion: Math.max(0, Math.min(100, newPortion)) } : m
+    ))
+  }
+
+  const toggleMemberActive = (memberId: string) => {
+    setHouseholdPortions(prev => {
+      const member = prev.find(m => m.id === memberId)
+      if (!member) return prev
+
+      if (member.portion > 0) {
+        // Deactivate: set to 0
+        return prev.map(m => m.id === memberId ? { ...m, portion: 0 } : m)
+      } else {
+        // Activate: split evenly with other active members
+        const activeCount = prev.filter(m => m.portion > 0).length + 1
+        const evenPortion = Math.round(100 / activeCount)
+        return prev.map(m => {
+          if (m.id === memberId) return { ...m, portion: evenPortion }
+          if (m.portion > 0) return { ...m, portion: evenPortion }
+          return m
+        })
+      }
+    })
   }
 
   const healthBadge = nutrition ? HEALTH_BADGES[nutrition.health_assessment] || HEALTH_BADGES.balanced : null
@@ -548,28 +607,22 @@ export default function LogMealPage() {
       {/* Step 4: Results */}
       {step === 'result' && nutrition && (
         <div className="space-y-6">
-          {/* Meal photo (if eating out) */}
-          {mealType === 'out' && image && (
-            <img
-              src={image}
-              alt="Meal"
-              className="w-full aspect-video object-cover rounded-2xl"
-            />
-          )}
-
-          {/* Meal source badge */}
-          <div className="flex items-center gap-2">
-            <span className={`text-xs px-3 py-1 rounded-full ${
-              mealType === 'home'
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-amber-100 text-amber-700'
-            }`}>
-              {mealType === 'home' ? '🏠 Home Meal' : '🍽️ Eating Out'}
-            </span>
-            {mealType === 'home' && (
-              <span className="text-xs text-gray-500">
-                Inventory updated
-              </span>
+          {/* Meal photo or placeholder */}
+          <div className="relative">
+            {image ? (
+              <img
+                src={image}
+                alt="Meal"
+                className="w-full aspect-video object-cover rounded-2xl"
+              />
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full aspect-video bg-gray-100 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
+              >
+                <span className="text-4xl mb-2">📷</span>
+                <span className="text-sm text-gray-500">Add photo</span>
+              </div>
             )}
           </div>
 
@@ -583,55 +636,162 @@ export default function LogMealPage() {
             )}
           </div>
 
-          {/* Nutrition breakdown */}
-          <div className="bg-gray-50 rounded-2xl p-5 space-y-4">
-            <h3 className="font-semibold text-gray-900">Estimated Nutrition</h3>
-
-            {/* Calories */}
-            <div className="text-center py-4 bg-white rounded-xl">
-              <div className="text-3xl font-bold text-gray-900">{nutrition.estimated_calories}</div>
-              <div className="text-sm text-gray-500">calories</div>
+          {/* Quick Metadata Form */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-4">
+            {/* Date & Meal Time */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={mealDate}
+                  onChange={(e) => setMealDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Meal</label>
+                <select
+                  value={mealTime}
+                  onChange={(e) => setMealTime(e.target.value as MealTime)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
+                >
+                  <option value="breakfast">🌅 Breakfast</option>
+                  <option value="lunch">☀️ Lunch</option>
+                  <option value="dinner">🌙 Dinner</option>
+                  <option value="snack">🍿 Snack</option>
+                </select>
+              </div>
             </div>
 
-            {/* Macros */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-blue-50 rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold text-blue-600">{nutrition.protein_grams}g</div>
+            {/* Who ate - Household portions */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-2">Who ate this?</label>
+              <div className="space-y-2">
+                {householdPortions.map((member) => (
+                  <div key={member.id} className="flex items-center gap-3">
+                    <button
+                      onClick={() => toggleMemberActive(member.id)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                        member.portion > 0
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-gray-200 text-gray-400'
+                      }`}
+                    >
+                      {member.name[0]}
+                    </button>
+                    <span className={`text-sm font-medium w-12 ${member.portion > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                      {member.name}
+                    </span>
+                    {member.portion > 0 && (
+                      <div className="flex-1 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={member.portion}
+                          onChange={(e) => updatePortions(member.id, parseInt(e.target.value))}
+                          className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700 w-12 text-right">{member.portion}%</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* Portion warning if not 100% */}
+              {householdPortions.reduce((sum, m) => sum + m.portion, 0) !== 100 && householdPortions.some(m => m.portion > 0) && (
+                <p className="text-xs text-amber-600 mt-2">
+                  ⚠️ Portions total {householdPortions.reduce((sum, m) => sum + m.portion, 0)}% (should be 100%)
+                </p>
+              )}
+            </div>
+
+            {/* Divide by (for sharing/receipts) */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Divide by <span className="text-gray-400">(e.g., shared with others)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDivideBy(Math.max(1, divideBy - 1))}
+                  className="w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
+                >
+                  -
+                </button>
+                <span className="text-lg font-bold text-gray-900 w-8 text-center">{divideBy}</span>
+                <button
+                  onClick={() => setDivideBy(divideBy + 1)}
+                  className="w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
+                >
+                  +
+                </button>
+                <span className="text-sm text-gray-500 ml-2">
+                  {divideBy > 1 ? `(${Math.round(nutrition.estimated_calories / divideBy)} cal each)` : 'person'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Nutrition breakdown (collapsed summary) */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Nutrition</h3>
+              <span className="text-sm text-gray-500">
+                {divideBy > 1 ? `÷${divideBy} = ` : ''}
+                {Math.round(nutrition.estimated_calories / divideBy)} cal
+              </span>
+            </div>
+
+            {/* Compact macros */}
+            <div className="grid grid-cols-5 gap-2 text-center">
+              <div className="bg-orange-50 rounded-lg p-2">
+                <div className="text-lg font-bold text-orange-600">{Math.round(nutrition.estimated_calories / divideBy)}</div>
+                <div className="text-xs text-orange-600">Cal</div>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-2">
+                <div className="text-lg font-bold text-blue-600">{Math.round(nutrition.protein_grams / divideBy)}g</div>
                 <div className="text-xs text-blue-600">Protein</div>
               </div>
-              <div className="bg-amber-50 rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold text-amber-600">{nutrition.carbs_grams}g</div>
+              <div className="bg-amber-50 rounded-lg p-2">
+                <div className="text-lg font-bold text-amber-600">{Math.round(nutrition.carbs_grams / divideBy)}g</div>
                 <div className="text-xs text-amber-600">Carbs</div>
               </div>
-              <div className="bg-orange-50 rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold text-orange-600">{nutrition.fat_grams}g</div>
-                <div className="text-xs text-orange-600">Fat</div>
+              <div className="bg-purple-50 rounded-lg p-2">
+                <div className="text-lg font-bold text-purple-600">{Math.round(nutrition.fat_grams / divideBy)}g</div>
+                <div className="text-xs text-purple-600">Fat</div>
               </div>
-            </div>
-
-            {/* Veggies */}
-            <div className="flex items-center justify-between bg-green-50 rounded-xl p-4">
-              <span className="text-green-700">Vegetable Servings</span>
-              <span className="text-xl font-bold text-green-600">{nutrition.vegetable_servings}</span>
+              <div className="bg-green-50 rounded-lg p-2">
+                <div className="text-lg font-bold text-green-600">{(nutrition.vegetable_servings / divideBy).toFixed(1)}</div>
+                <div className="text-xs text-green-600">Veggies</div>
+              </div>
             </div>
 
             {/* Components */}
             {nutrition.detected_components.length > 0 && (
-              <div>
-                <div className="text-sm text-gray-500 mb-2">Components:</div>
-                <div className="flex flex-wrap gap-2">
-                  {nutrition.detected_components.map((component, i) => (
-                    <span key={i} className="text-xs bg-white px-2 py-1 rounded-lg text-gray-700">
-                      {component}
-                    </span>
-                  ))}
-                </div>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {nutrition.detected_components.map((component, i) => (
+                  <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">
+                    {component}
+                  </span>
+                ))}
               </div>
             )}
+          </div>
 
-            {/* AI Notes */}
-            {nutrition.notes && (
-              <p className="text-sm text-gray-600 italic">{nutrition.notes}</p>
+          {/* Meal source badge */}
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-3 py-1 rounded-full ${
+              mealType === 'home'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {mealType === 'home' ? '🏠 Home Meal' : '🍽️ Eating Out'}
+            </span>
+            {mealType === 'home' && (
+              <span className="text-xs text-gray-500">
+                Inventory will be updated
+              </span>
             )}
           </div>
 
@@ -639,16 +799,70 @@ export default function LogMealPage() {
           <div className="flex gap-4">
             <button
               onClick={resetForm}
-              className="flex-1 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50"
+              disabled={saving}
+              className="flex-1 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
             >
-              Log Another
+              Cancel
             </button>
-            <Link
-              href="/dashboard"
-              className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-medium text-center hover:bg-emerald-700"
+            <button
+              onClick={async () => {
+                setSaving(true)
+                try {
+                  // Combine date and time to create eaten_at timestamp
+                  const eatenAt = new Date(mealDate)
+                  const now = new Date()
+                  eatenAt.setHours(now.getHours(), now.getMinutes(), 0, 0)
+
+                  // Calculate nutrition per person (divide by divideBy, then apply portion)
+                  const activeMembers = householdPortions.filter(m => m.portion > 0)
+
+                  // Save meal for each household member with their portion
+                  for (const member of activeMembers) {
+                    const portionMultiplier = (member.portion / 100) / divideBy
+
+                    const response = await fetch('/api/log-meal/save', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        meal_name: nutrition.meal_name,
+                        meal_source: mealType === 'home' ? 'home_cooked' : 'restaurant',
+                        meal_time: mealTime,
+                        eaten_at: eatenAt.toISOString(),
+                        household_member: member.name,
+                        portion_percentage: member.portion,
+                        divide_by: divideBy,
+                        // Nutrition scaled by portion
+                        estimated_calories: Math.round(nutrition.estimated_calories * portionMultiplier),
+                        protein_grams: Math.round(nutrition.protein_grams * portionMultiplier),
+                        carbs_grams: Math.round(nutrition.carbs_grams * portionMultiplier),
+                        fat_grams: Math.round(nutrition.fat_grams * portionMultiplier),
+                        fiber_grams: nutrition.fiber_grams ? Math.round(nutrition.fiber_grams * portionMultiplier) : null,
+                        vegetable_servings: parseFloat((nutrition.vegetable_servings * portionMultiplier).toFixed(1)),
+                        detected_components: nutrition.detected_components,
+                        health_assessment: nutrition.health_assessment,
+                        ai_notes: nutrition.notes,
+                        image_url: image || null,
+                      }),
+                    })
+
+                    if (!response.ok) {
+                      throw new Error('Failed to save meal')
+                    }
+                  }
+
+                  resetForm()
+                } catch (err) {
+                  console.error('Save error:', err)
+                  setError('Failed to save meal. Please try again.')
+                } finally {
+                  setSaving(false)
+                }
+              }}
+              disabled={saving}
+              className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
             >
-              Done
-            </Link>
+              {saving ? 'Saving...' : 'Save Meal'}
+            </button>
           </div>
         </div>
       )}
