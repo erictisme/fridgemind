@@ -57,6 +57,7 @@ interface MealSuggestion {
 }
 
 interface InventoryItem {
+  id: string
   name: string
   quantity: number
   expiry_date: string
@@ -142,6 +143,7 @@ export default function InspirePage() {
   const [recipeCount, setRecipeCount] = useState(3)
   const [loadingInventory, setLoadingInventory] = useState(false)
   const [selectedCookingMethods, setSelectedCookingMethods] = useState<string[]>([])
+  const [deletingInventoryItem, setDeletingInventoryItem] = useState<string | null>(null)
   const [remarks, setRemarks] = useState('')
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
   const [savingSuggestion, setSavingSuggestion] = useState(false)
@@ -291,6 +293,31 @@ export default function InspirePage() {
   // Calculate days until expiry
   const getDaysUntilExpiry = (expiryDate: string) => {
     return Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  }
+
+  // Delete inventory item (ate it or went bad)
+  const handleDeleteInventoryItem = async (itemId: string, reason: 'eaten' | 'bad') => {
+    setDeletingInventoryItem(itemId)
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (response.ok) {
+        // Remove from local state
+        const deletedItem = inventoryItems.find(i => i.id === itemId)
+        setInventoryItems(prev => prev.filter(i => i.id !== itemId))
+        // Also remove from selected if it was selected
+        if (deletedItem) {
+          setSelectedIngredients(prev => prev.filter(n => n !== deletedItem.name))
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete item:', err)
+    } finally {
+      setDeletingInventoryItem(null)
+    }
   }
 
   // Toggle cooking method selection
@@ -1015,21 +1042,25 @@ export default function InspirePage() {
                   const isSelected = selectedIngredients.includes(item.name)
                   const isUrgent = days <= 2
                   const isExpiringSoon = days <= 5
+                  const isDeleting = deletingInventoryItem === item.id
 
                   return (
-                    <label
+                    <div
                       key={index}
-                      className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0 ${
+                      className={`flex items-center gap-3 px-3 py-2 transition-colors border-b border-gray-100 last:border-b-0 ${
                         isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'
-                      }`}
+                      } ${isDeleting ? 'opacity-50' : ''}`}
                     >
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleIngredient(item.name)}
-                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                       />
-                      <span className={`flex-1 ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+                      <span
+                        className={`flex-1 cursor-pointer ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}
+                        onClick={() => toggleIngredient(item.name)}
+                      >
                         {item.name}
                       </span>
                       <span className="text-sm text-gray-400">×{item.quantity}</span>
@@ -1044,7 +1075,23 @@ export default function InspirePage() {
                       ) : (
                         <span className="text-xs text-gray-400">{days}d</span>
                       )}
-                    </label>
+                      <button
+                        onClick={() => handleDeleteInventoryItem(item.id, 'eaten')}
+                        disabled={isDeleting}
+                        className="w-6 h-6 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-xs flex-shrink-0"
+                        title="Ate it"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => handleDeleteInventoryItem(item.id, 'bad')}
+                        disabled={isDeleting}
+                        className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-xs flex-shrink-0"
+                        title="Went bad"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   )
                 })}
               </div>

@@ -42,7 +42,7 @@ const GREETINGS: Record<string, string> = {
   morning: 'Good morning',
   afternoon: 'Good afternoon',
   evening: 'Good evening',
-  night: 'Good night',
+  night: 'Good evening', // Use "evening" for late night too - "Good night" sounds like goodbye
 }
 
 const ACTION_COLORS: Record<string, { bg: string; icon: string; button: string }> = {
@@ -58,6 +58,7 @@ export default function DashboardPage() {
   const [feedData, setFeedData] = useState<HomeFeedData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingItem, setDeletingItem] = useState<string | null>(null)
 
   useEffect(() => {
     fetchHomeFeed()
@@ -73,6 +74,46 @@ export default function DashboardPage() {
       setError('Failed to load home feed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleQuickDelete = async (itemId: string, reason: 'eaten' | 'bad') => {
+    setDeletingItem(itemId)
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (response.ok) {
+        // Remove from local state immediately
+        setFeedData(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            expiring_items: prev.expiring_items.filter(i => i.id !== itemId),
+            context: {
+              ...prev.context,
+              inventory_count: prev.context.inventory_count - 1,
+              expiring_soon_count: prev.context.expiring_soon_count - 1,
+            },
+            primary_action: prev.primary_action?.data?.items
+              ? {
+                  ...prev.primary_action,
+                  data: {
+                    ...prev.primary_action.data,
+                    items: prev.primary_action.data.items.filter(i => i.id !== itemId),
+                    count: (prev.primary_action.data.count || 0) - 1,
+                  },
+                }
+              : prev.primary_action,
+          }
+        })
+      }
+    } catch (err) {
+      console.error('Failed to delete item:', err)
+    } finally {
+      setDeletingItem(null)
     }
   }
 
@@ -161,12 +202,31 @@ export default function DashboardPage() {
                   <div className="mt-4 space-y-2">
                     {primary_action.data.items.slice(0, 3).map(item => {
                       const expiry = getExpiryLabel(item.days_until_expiry)
+                      const isDeleting = deletingItem === item.id
                       return (
-                        <div key={item.id} className="flex items-center justify-between bg-white/70 rounded-xl px-3 py-2">
+                        <div key={item.id} className={`flex items-center justify-between bg-white/70 rounded-xl px-3 py-2 ${isDeleting ? 'opacity-50' : ''}`}>
                           <span className="font-medium text-gray-900">{item.name}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
-                            {expiry.text}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
+                              {expiry.text}
+                            </span>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleQuickDelete(item.id, 'eaten') }}
+                              disabled={isDeleting}
+                              className="w-7 h-7 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-sm"
+                              title="Ate it"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleQuickDelete(item.id, 'bad') }}
+                              disabled={isDeleting}
+                              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-sm"
+                              title="Went bad"
+                            >
+                              🗑
+                            </button>
+                          </div>
                         </div>
                       )
                     })}
@@ -235,17 +295,36 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {expiring_items.slice(0, 4).map(item => {
               const expiry = getExpiryLabel(item.days_until_expiry)
+              const isDeleting = deletingItem === item.id
               return (
-                <div key={item.id} className="flex items-center justify-between bg-white/70 rounded-xl px-3 py-2">
+                <div key={item.id} className={`flex items-center justify-between bg-white/70 rounded-xl px-3 py-2 ${isDeleting ? 'opacity-50' : ''}`}>
                   <div>
                     <span className="font-medium text-gray-900">{item.name}</span>
                     {item.quantity > 1 && (
                       <span className="text-sm text-gray-500 ml-2">x{item.quantity}</span>
                     )}
                   </div>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
-                    {expiry.text}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
+                      {expiry.text}
+                    </span>
+                    <button
+                      onClick={() => handleQuickDelete(item.id, 'eaten')}
+                      disabled={isDeleting}
+                      className="w-7 h-7 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-sm"
+                      title="Ate it"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => handleQuickDelete(item.id, 'bad')}
+                      disabled={isDeleting}
+                      className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-sm"
+                      title="Went bad"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               )
             })}
