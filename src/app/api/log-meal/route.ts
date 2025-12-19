@@ -111,7 +111,17 @@ export async function POST(request: NextRequest) {
       }
 
       // Analyze nutrition with Gemini
-      const nutrition = await analyzeNutrition(image)
+      let nutrition
+      try {
+        nutrition = await analyzeNutrition(image)
+      } catch (analysisError) {
+        console.error('Nutrition analysis error:', analysisError)
+        const errorMessage = analysisError instanceof Error ? analysisError.message : 'Unknown error'
+        return NextResponse.json({
+          error: 'Failed to analyze meal',
+          details: errorMessage
+        }, { status: 500 })
+      }
 
       // Save to database
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,7 +163,11 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Log meal error:', error)
-    return NextResponse.json({ error: 'Failed to log meal' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({
+      error: 'Failed to log meal',
+      details: errorMessage
+    }, { status: 500 })
   }
 }
 

@@ -103,7 +103,7 @@ GUIDELINES:
 - Do not include any text before or after the JSON`
 
 export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   // Remove data URL prefix if present
   const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '')
@@ -163,7 +163,7 @@ export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt>
 }
 
 export async function parseReceiptImage(imageBase64: string): Promise<ParsedReceipt> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   // Remove data URL prefix if present
   const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
@@ -287,7 +287,7 @@ GUIDELINES:
 - Do not include any text before or after the JSON`
 
 export async function parseReceiptText(receiptText: string): Promise<ParsedReceipt> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const result = await model.generateContent([
     TEXT_RECEIPT_PROMPT,

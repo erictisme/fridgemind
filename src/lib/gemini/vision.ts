@@ -61,7 +61,7 @@ Output format: Return ONLY a valid JSON object with this structure:
 Do not include any text before or after the JSON. Only return the JSON object.`
 
 export async function analyzeImage(imageBase64: string): Promise<VisionResponse> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   // Remove data URL prefix if present
   const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
@@ -141,7 +141,7 @@ export async function estimateExpiry(
   location: string,
   purchaseDate: string
 ): Promise<ExpiryEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const prompt = `${EXPIRY_PROMPT}
 
@@ -204,7 +204,7 @@ export async function estimateStorage(
   itemName: string,
   purchaseDate: string
 ): Promise<StorageEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const prompt = `${STORAGE_PROMPT}
 
@@ -312,51 +312,62 @@ Return ONLY a valid JSON object with this structure:
 Do not include any text before or after the JSON.`
 
 export async function analyzeNutrition(imageBase64: string): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-
-  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: base64Data,
-      },
-    },
-    NUTRITION_PROMPT,
-  ])
-
-  const response = await result.response
-  const text = response.text()
-
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response')
-    }
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
-    const parsed = JSON.parse(jsonMatch[0])
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
 
-    return {
-      meal_name: parsed.meal_name || 'Unknown meal',
-      detected_components: parsed.detected_components || [],
-      estimated_calories: parsed.estimated_calories || 0,
-      protein_grams: parsed.protein_grams || 0,
-      carbs_grams: parsed.carbs_grams || 0,
-      fat_grams: parsed.fat_grams || 0,
-      fiber_grams: parsed.fiber_grams || 0,
-      vegetable_servings: parsed.vegetable_servings || 0,
-      health_assessment: parsed.health_assessment || 'balanced',
-      notes: parsed.notes || '',
-      // Red flag fields
-      sodium_level: parsed.sodium_level || 'moderate',
-      is_fried: parsed.is_fried || false,
-      contains_red_meat: parsed.contains_red_meat || false,
-      contains_processed_food: parsed.contains_processed_food || false,
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: base64Data,
+        },
+      },
+      NUTRITION_PROMPT,
+    ])
+
+    const response = await result.response
+    const text = response.text()
+
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        console.error('No JSON in Gemini response:', text)
+        throw new Error('No JSON found in response')
+      }
+
+      const parsed = JSON.parse(jsonMatch[0])
+
+      return {
+        meal_name: parsed.meal_name || 'Unknown meal',
+        detected_components: parsed.detected_components || [],
+        estimated_calories: parsed.estimated_calories || 0,
+        protein_grams: parsed.protein_grams || 0,
+        carbs_grams: parsed.carbs_grams || 0,
+        fat_grams: parsed.fat_grams || 0,
+        fiber_grams: parsed.fiber_grams || 0,
+        vegetable_servings: parsed.vegetable_servings || 0,
+        health_assessment: parsed.health_assessment || 'balanced',
+        notes: parsed.notes || '',
+        // Red flag fields
+        sodium_level: parsed.sodium_level || 'moderate',
+        is_fried: parsed.is_fried || false,
+        contains_red_meat: parsed.contains_red_meat || false,
+        contains_processed_food: parsed.contains_processed_food || false,
+      }
+    } catch (parseErr) {
+      console.error('Failed to parse Gemini nutrition response:', text, parseErr)
+      throw new Error('Failed to parse nutrition data from AI response')
     }
   } catch (err) {
-    console.error('Failed to parse Gemini nutrition response:', text, err)
-    throw new Error('Failed to analyze nutrition')
+    console.error('Gemini API error in analyzeNutrition:', err)
+    // Log the full error details for debugging
+    if (err instanceof Error) {
+      console.error('Error message:', err.message)
+      console.error('Error stack:', err.stack)
+    }
+    throw new Error(`Failed to analyze nutrition: ${err instanceof Error ? err.message : 'Unknown error'}`)
   }
 }
 
@@ -386,7 +397,7 @@ export async function generateMealSuggestions(
   preferences?: string,
   options?: MealSuggestionOptions
 ): Promise<MealSuggestionAI[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const recipeCount = Math.min(5, Math.max(1, options?.recipeCount || 3))
   const mustUseItems = options?.mustUseItems || []
@@ -504,7 +515,7 @@ Do not include any text before or after the JSON array.`
 export async function estimateHomeMealNutrition(
   items: Array<{ name: string; quantity: number; unit: string }>
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const itemsList = items.map(item => `- ${item.name}: ${item.quantity} ${item.unit}`).join('\n')
 
@@ -580,7 +591,7 @@ Do not include any text before or after the JSON.`
 }
 
 export async function analyzeMultipleImages(imagesBase64: string[]): Promise<VisionResponse> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   // Build content array with all images
   const content: Array<{ inlineData: { mimeType: string; data: string } } | string> = []
@@ -632,7 +643,7 @@ export async function analyzeNutritionFromText(
   description: string,
   userCaption?: string
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const captionContext = userCaption
     ? `\n\nUser's additional notes: "${userCaption}"`
@@ -713,7 +724,7 @@ export async function analyzeNutritionWithCaption(
   imageBase64: string,
   caption: string
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
 

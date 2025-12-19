@@ -214,7 +214,10 @@ export default function LogMealPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to analyze meal')
+        const errorData = await response.json()
+        const errorMsg = errorData.details || errorData.error || 'Failed to analyze meal'
+        console.error('API error:', errorMsg)
+        throw new Error(errorMsg)
       }
 
       const data = await response.json()
@@ -222,7 +225,8 @@ export default function LogMealPage() {
       setStep('result')
     } catch (err) {
       console.error('Analysis error:', err)
-      setError('Failed to analyze meal. Please try again.')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to analyze meal. Please try again.'
+      setError(errorMessage)
       setStep('capture')
     }
   }

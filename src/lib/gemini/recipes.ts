@@ -66,7 +66,7 @@ Return ONLY valid JSON:
 Do not include any text before or after the JSON.`
 
 export async function parseRecipeText(text: string): Promise<ParsedRecipe> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const prompt = `${PARSE_RECIPE_TEXT_PROMPT}
 
@@ -149,7 +149,7 @@ export async function extractRecipeFromInstagram(
   caption: string,
   imageDescription?: string
 ): Promise<ParsedRecipe> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   let content = `Instagram caption:
 """
@@ -282,7 +282,7 @@ export interface BulkParseResult {
 }
 
 export async function parseBulkRecipes(text: string): Promise<BulkParseResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const prompt = `${BULK_RECIPE_PARSE_PROMPT}
 
@@ -336,7 +336,7 @@ export async function generateShoppingFromRecipe(
   ingredients: RecipeIngredient[],
   inventoryItems: string[]
 ): Promise<RecipeShoppingResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
   const ingredientList = ingredients
     .map(i => `${i.quantity || ''} ${i.unit || ''} ${i.name}`.trim())
