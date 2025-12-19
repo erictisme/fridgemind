@@ -59,6 +59,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingItem, setDeletingItem] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
     fetchHomeFeed()
@@ -77,8 +78,9 @@ export default function DashboardPage() {
     }
   }
 
-  const handleQuickDelete = async (itemId: string, reason: 'eaten' | 'bad') => {
+  const handleDeleteItem = async (itemId: string, reason: 'eaten' | 'bad' | 'wrong') => {
     setDeletingItem(itemId)
+    setConfirmDelete(null)
     try {
       const response = await fetch(`/api/inventory/${itemId}`, {
         method: 'DELETE',
@@ -154,6 +156,42 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove {confirmDelete.name}?</h3>
+            <p className="text-gray-500 text-sm mb-4">What happened to this item?</p>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleDeleteItem(confirmDelete.id, 'eaten')}
+                className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>✓</span> Ate it
+              </button>
+              <button
+                onClick={() => handleDeleteItem(confirmDelete.id, 'bad')}
+                className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>🗑</span> Went bad
+              </button>
+              <button
+                onClick={() => handleDeleteItem(confirmDelete.id, 'wrong')}
+                className="w-full py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>✕</span> Added by mistake
+              </button>
+            </div>
+            <button
+              onClick={() => setConfirmDelete(null)}
+              className="w-full mt-3 py-2 text-gray-400 hover:text-gray-600 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cooking Wrapped 2025 Banner */}
       <Link href="/dashboard/wrapped" className="block">
         <div className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 rounded-2xl p-5 text-white relative overflow-hidden hover:shadow-lg transition-shadow">
@@ -211,18 +249,10 @@ export default function DashboardPage() {
                               {expiry.text}
                             </span>
                             <button
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleQuickDelete(item.id, 'eaten') }}
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete({ id: item.id, name: item.name }) }}
                               disabled={isDeleting}
-                              className="w-7 h-7 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-sm"
-                              title="Ate it"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleQuickDelete(item.id, 'bad') }}
-                              disabled={isDeleting}
-                              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-sm"
-                              title="Went bad"
+                              className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm"
+                              title="Remove item"
                             >
                               🗑
                             </button>
@@ -309,18 +339,10 @@ export default function DashboardPage() {
                       {expiry.text}
                     </span>
                     <button
-                      onClick={() => handleQuickDelete(item.id, 'eaten')}
+                      onClick={() => setConfirmDelete({ id: item.id, name: item.name })}
                       disabled={isDeleting}
-                      className="w-7 h-7 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-sm"
-                      title="Ate it"
-                    >
-                      ✓
-                    </button>
-                    <button
-                      onClick={() => handleQuickDelete(item.id, 'bad')}
-                      disabled={isDeleting}
-                      className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-sm"
-                      title="Went bad"
+                      className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm"
+                      title="Remove item"
                     >
                       🗑
                     </button>

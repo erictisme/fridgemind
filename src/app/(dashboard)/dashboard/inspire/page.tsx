@@ -144,6 +144,7 @@ export default function InspirePage() {
   const [loadingInventory, setLoadingInventory] = useState(false)
   const [selectedCookingMethods, setSelectedCookingMethods] = useState<string[]>([])
   const [deletingInventoryItem, setDeletingInventoryItem] = useState<string | null>(null)
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<{ id: string; name: string } | null>(null)
   const [remarks, setRemarks] = useState('')
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
   const [savingSuggestion, setSavingSuggestion] = useState(false)
@@ -295,9 +296,10 @@ export default function InspirePage() {
     return Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
   }
 
-  // Delete inventory item (ate it or went bad)
-  const handleDeleteInventoryItem = async (itemId: string, reason: 'eaten' | 'bad') => {
+  // Delete inventory item (ate it, went bad, or wrong)
+  const handleDeleteInventoryItem = async (itemId: string, reason: 'eaten' | 'bad' | 'wrong') => {
     setDeletingInventoryItem(itemId)
+    setConfirmDeleteItem(null)
     try {
       const response = await fetch(`/api/inventory/${itemId}`, {
         method: 'DELETE',
@@ -876,6 +878,42 @@ export default function InspirePage() {
 
   return (
     <div className="max-w-4xl mx-auto pb-20">
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDeleteItem(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Remove {confirmDeleteItem.name}?</h3>
+            <p className="text-gray-500 text-sm mb-4">What happened to this item?</p>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleDeleteInventoryItem(confirmDeleteItem.id, 'eaten')}
+                className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>✓</span> Ate it
+              </button>
+              <button
+                onClick={() => handleDeleteInventoryItem(confirmDeleteItem.id, 'bad')}
+                className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>🗑</span> Went bad
+              </button>
+              <button
+                onClick={() => handleDeleteInventoryItem(confirmDeleteItem.id, 'wrong')}
+                className="w-full py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-xl font-medium flex items-center justify-center gap-2"
+              >
+                <span>✕</span> Added by mistake
+              </button>
+            </div>
+            <button
+              onClick={() => setConfirmDeleteItem(null)}
+              className="w-full mt-3 py-2 text-gray-400 hover:text-gray-600 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6">
         <Link href="/dashboard" className="text-gray-500 hover:text-gray-700 text-sm">
@@ -1076,18 +1114,10 @@ export default function InspirePage() {
                         <span className="text-xs text-gray-400">{days}d</span>
                       )}
                       <button
-                        onClick={() => handleDeleteInventoryItem(item.id, 'eaten')}
+                        onClick={() => setConfirmDeleteItem({ id: item.id, name: item.name })}
                         disabled={isDeleting}
-                        className="w-6 h-6 rounded-full bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center text-xs flex-shrink-0"
-                        title="Ate it"
-                      >
-                        ✓
-                      </button>
-                      <button
-                        onClick={() => handleDeleteInventoryItem(item.id, 'bad')}
-                        disabled={isDeleting}
-                        className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-xs flex-shrink-0"
-                        title="Went bad"
+                        className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-xs flex-shrink-0"
+                        title="Remove item"
                       >
                         🗑
                       </button>
