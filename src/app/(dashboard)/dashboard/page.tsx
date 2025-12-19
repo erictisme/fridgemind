@@ -423,19 +423,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Lifecycle Navigation */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">Quick Access</h3>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          <LifecycleButton href="/dashboard/inspire" icon="✨" label="Inspire" />
-          <LifecycleButton href="/dashboard/shopping-list" icon="📝" label="List" />
-          <LifecycleButton href="/dashboard/shopping-list" icon="🛒" label="Shop" />
-          <LifecycleButton href="/dashboard/groceries?tab=upload" icon="📦" label="Store" />
-          <LifecycleButton href="/dashboard/suggestions" icon="🍳" label="Cook" />
-          <LifecycleButton href="/dashboard/log-meal" icon="🍽️" label="Eat" />
-        </div>
-      </div>
-
       {/* Expiring Items List (if not already shown in primary action) */}
       {expiring_items.length > 0 && primary_action?.type !== 'use_soon' && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-5 border border-amber-100">
@@ -498,18 +485,6 @@ export default function DashboardPage() {
         <StatCard value={context.recipes_count} label="Recipes" color="purple" href="/dashboard/inspire" />
       </div>
     </div>
-  )
-}
-
-function LifecycleButton({ href, icon, label }: { href: string; icon: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col items-center p-3 rounded-xl hover:bg-gray-50 transition-colors"
-    >
-      <span className="text-2xl mb-1">{icon}</span>
-      <span className="text-xs font-medium text-gray-600">{label}</span>
-    </Link>
   )
 }
 

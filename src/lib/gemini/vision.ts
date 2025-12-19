@@ -271,11 +271,25 @@ export interface NutritionEstimate {
   vegetable_servings: number
   health_assessment: string
   notes: string
+  // Red flag detection
+  sodium_level?: 'low' | 'moderate' | 'high'
+  is_fried?: boolean
+  contains_red_meat?: boolean
+  contains_processed_food?: boolean
 }
 
-const NUTRITION_PROMPT = `You are a nutrition expert. Analyze this photo of a restaurant meal and estimate its nutritional content.
+const NUTRITION_PROMPT = `You are a nutrition expert. Analyze this photo of a meal and estimate its nutritional content.
 
-Consider typical restaurant portion sizes. Be realistic but conservative with estimates.
+Consider typical portion sizes. Be realistic but conservative with estimates.
+
+IMPORTANT - Detect these health flags:
+- sodium_level: Estimate based on visible sauces, seasonings, processed ingredients, restaurant-style cooking
+  - "low": Fresh, lightly seasoned, no visible sauces
+  - "moderate": Some sauce/seasoning, typical home cooking
+  - "high": Heavy sauces, soy sauce, processed items, fast food, salted snacks
+- is_fried: True if food appears deep-fried, pan-fried with oil, or has crispy battered coating
+- contains_red_meat: True if beef, pork, lamb, or other red meat is visible
+- contains_processed_food: True if processed meats (bacon, sausage, ham), packaged snacks, or heavily processed ingredients visible
 
 Return ONLY a valid JSON object with this structure:
 {
@@ -288,6 +302,10 @@ Return ONLY a valid JSON object with this structure:
   "fiber_grams": number,
   "vegetable_servings": number (0, 0.5, 1, 1.5, 2, etc.),
   "health_assessment": "balanced" | "protein_heavy" | "carb_heavy" | "high_fat" | "vegetable_rich" | "light",
+  "sodium_level": "low" | "moderate" | "high",
+  "is_fried": boolean,
+  "contains_red_meat": boolean,
+  "contains_processed_food": boolean,
   "notes": "Brief observation about the meal's nutrition"
 }
 
@@ -330,6 +348,11 @@ export async function analyzeNutrition(imageBase64: string): Promise<NutritionEs
       vegetable_servings: parsed.vegetable_servings || 0,
       health_assessment: parsed.health_assessment || 'balanced',
       notes: parsed.notes || '',
+      // Red flag fields
+      sodium_level: parsed.sodium_level || 'moderate',
+      is_fried: parsed.is_fried || false,
+      contains_red_meat: parsed.contains_red_meat || false,
+      contains_processed_food: parsed.contains_processed_food || false,
     }
   } catch (err) {
     console.error('Failed to parse Gemini nutrition response:', text, err)
@@ -492,6 +515,15 @@ ${itemsList}
 
 Assume typical home cooking methods and portion sizes. Be realistic with estimates.
 
+IMPORTANT - Detect these health flags:
+- sodium_level: Estimate based on ingredients
+  - "low": Fresh ingredients, no added salt/sauces
+  - "moderate": Some seasoning, typical home cooking
+  - "high": Salty sauces, processed ingredients, cured meats
+- is_fried: True if likely to be fried (based on ingredient types)
+- contains_red_meat: True if beef, pork, lamb visible in ingredients
+- contains_processed_food: True if processed meats, packaged items in ingredients
+
 Return ONLY a valid JSON object with this structure:
 {
   "meal_name": "Descriptive name for this combination (e.g., 'Stir-fried Cabbage with Tofu and Avocado')",
@@ -503,6 +535,10 @@ Return ONLY a valid JSON object with this structure:
   "fiber_grams": number,
   "vegetable_servings": number (0, 0.5, 1, 1.5, 2, etc.),
   "health_assessment": "balanced" | "protein_heavy" | "carb_heavy" | "high_fat" | "vegetable_rich" | "light",
+  "sodium_level": "low" | "moderate" | "high",
+  "is_fried": boolean,
+  "contains_red_meat": boolean,
+  "contains_processed_food": boolean,
   "notes": "Brief observation about the meal's nutrition"
 }
 
@@ -531,6 +567,11 @@ Do not include any text before or after the JSON.`
       vegetable_servings: parsed.vegetable_servings || 0,
       health_assessment: parsed.health_assessment || 'balanced',
       notes: parsed.notes || '',
+      // Red flag fields
+      sodium_level: parsed.sodium_level || 'moderate',
+      is_fried: parsed.is_fried || false,
+      contains_red_meat: parsed.contains_red_meat || false,
+      contains_processed_food: parsed.contains_processed_food || false,
     }
   } catch (err) {
     console.error('Failed to parse home meal nutrition response:', text, err)
@@ -583,5 +624,171 @@ export async function analyzeMultipleImages(imagesBase64: string[]): Promise<Vis
   } catch {
     console.error('Failed to parse Gemini response:', text)
     throw new Error('Failed to parse AI response')
+  }
+}
+
+// Text-based nutrition analysis (for when user describes their meal)
+export async function analyzeNutritionFromText(
+  description: string,
+  userCaption?: string
+): Promise<NutritionEstimate> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const captionContext = userCaption
+    ? `\n\nUser's additional notes: "${userCaption}"`
+    : ''
+
+  const prompt = `You are a nutrition expert. Based on this text description of a meal, estimate its nutritional content.
+
+MEAL DESCRIPTION: "${description}"${captionContext}
+
+Consider typical portion sizes based on the description. If portions or specific details are mentioned, use those. Otherwise, assume a standard adult serving.
+
+IMPORTANT - Detect these health flags:
+- sodium_level: Estimate based on described ingredients and cooking style
+  - "low": Fresh, lightly seasoned
+  - "moderate": Normal seasoning, typical cooking
+  - "high": Salty sauces, processed items, fast food
+- is_fried: True if description suggests fried food
+- contains_red_meat: True if beef, pork, lamb mentioned
+- contains_processed_food: True if processed meats, packaged items mentioned
+
+Return ONLY a valid JSON object with this structure:
+{
+  "meal_name": "Descriptive name of the dish",
+  "detected_components": ["component1", "component2", ...],
+  "estimated_calories": number,
+  "protein_grams": number,
+  "carbs_grams": number,
+  "fat_grams": number,
+  "fiber_grams": number,
+  "vegetable_servings": number (0, 0.5, 1, 1.5, 2, etc.),
+  "health_assessment": "balanced" | "protein_heavy" | "carb_heavy" | "high_fat" | "vegetable_rich" | "light",
+  "sodium_level": "low" | "moderate" | "high",
+  "is_fried": boolean,
+  "contains_red_meat": boolean,
+  "contains_processed_food": boolean,
+  "notes": "Brief observation about the meal's nutrition",
+  "confidence": 0.0-1.0 (how confident based on description detail)
+}
+
+Do not include any text before or after the JSON.`
+
+  const result = await model.generateContent(prompt)
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    return {
+      meal_name: parsed.meal_name || description.slice(0, 50),
+      detected_components: parsed.detected_components || [],
+      estimated_calories: parsed.estimated_calories || 0,
+      protein_grams: parsed.protein_grams || 0,
+      carbs_grams: parsed.carbs_grams || 0,
+      fat_grams: parsed.fat_grams || 0,
+      fiber_grams: parsed.fiber_grams || 0,
+      vegetable_servings: parsed.vegetable_servings || 0,
+      health_assessment: parsed.health_assessment || 'balanced',
+      notes: parsed.notes || '',
+      sodium_level: parsed.sodium_level || 'moderate',
+      is_fried: parsed.is_fried || false,
+      contains_red_meat: parsed.contains_red_meat || false,
+      contains_processed_food: parsed.contains_processed_food || false,
+    }
+  } catch (err) {
+    console.error('Failed to parse text nutrition response:', text, err)
+    throw new Error('Failed to analyze nutrition from description')
+  }
+}
+
+// Analyze nutrition from photo with user caption
+export async function analyzeNutritionWithCaption(
+  imageBase64: string,
+  caption: string
+): Promise<NutritionEstimate> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+
+  const promptWithCaption = `You are a nutrition expert. Analyze this photo of a meal and estimate its nutritional content.
+
+USER'S DESCRIPTION: "${caption}"
+Use this description to help understand portion sizes, cooking methods, or details not visible in the photo.
+
+Consider typical portion sizes. Be realistic but conservative with estimates.
+
+IMPORTANT - Detect these health flags:
+- sodium_level: "low" | "moderate" | "high"
+- is_fried: boolean
+- contains_red_meat: boolean
+- contains_processed_food: boolean
+
+Return ONLY a valid JSON object with this structure:
+{
+  "meal_name": "Descriptive name of the dish",
+  "detected_components": ["component1", "component2", ...],
+  "estimated_calories": number,
+  "protein_grams": number,
+  "carbs_grams": number,
+  "fat_grams": number,
+  "fiber_grams": number,
+  "vegetable_servings": number (0, 0.5, 1, 1.5, 2, etc.),
+  "health_assessment": "balanced" | "protein_heavy" | "carb_heavy" | "high_fat" | "vegetable_rich" | "light",
+  "sodium_level": "low" | "moderate" | "high",
+  "is_fried": boolean,
+  "contains_red_meat": boolean,
+  "contains_processed_food": boolean,
+  "notes": "Brief observation about the meal's nutrition"
+}
+
+Do not include any text before or after the JSON.`
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: base64Data,
+      },
+    },
+    promptWithCaption,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    return {
+      meal_name: parsed.meal_name || 'Unknown meal',
+      detected_components: parsed.detected_components || [],
+      estimated_calories: parsed.estimated_calories || 0,
+      protein_grams: parsed.protein_grams || 0,
+      carbs_grams: parsed.carbs_grams || 0,
+      fat_grams: parsed.fat_grams || 0,
+      fiber_grams: parsed.fiber_grams || 0,
+      vegetable_servings: parsed.vegetable_servings || 0,
+      health_assessment: parsed.health_assessment || 'balanced',
+      notes: parsed.notes || '',
+      sodium_level: parsed.sodium_level || 'moderate',
+      is_fried: parsed.is_fried || false,
+      contains_red_meat: parsed.contains_red_meat || false,
+      contains_processed_food: parsed.contains_processed_food || false,
+    }
+  } catch (err) {
+    console.error('Failed to parse Gemini nutrition with caption response:', text, err)
+    throw new Error('Failed to analyze nutrition')
   }
 }
