@@ -38,11 +38,12 @@ interface HomeFeedData {
   expiring_items: ExpiringItem[]
 }
 
-const GREETINGS: Record<string, string> = {
-  morning: 'Good morning',
-  afternoon: 'Good afternoon',
-  evening: 'Good evening',
-  night: 'Good evening', // Use "evening" for late night too - "Good night" sounds like goodbye
+const getGreeting = () => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return 'Good morning'
+  if (hour >= 12 && hour < 17) return 'Good afternoon'
+  if (hour >= 17 && hour < 22) return 'Good evening'
+  return 'Good evening' // Late night also shows "Good evening"
 }
 
 const ACTION_COLORS: Record<string, { bg: string; icon: string; button: string }> = {
@@ -60,6 +61,9 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [deletingItem, setDeletingItem] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
+  const [editingItem, setEditingItem] = useState<ExpiringItem | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', expiry_date: '', quantity: 1 })
+  const [savingEdit, setSavingEdit] = useState(false)
 
   useEffect(() => {
     fetchHomeFeed()
@@ -119,6 +123,62 @@ export default function DashboardPage() {
     }
   }
 
+  const openEditModal = (item: ExpiringItem) => {
+    setEditingItem(item)
+    setEditForm({
+      name: item.name,
+      expiry_date: item.expiry_date,
+      quantity: item.quantity,
+    })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingItem) return
+    setSavingEdit(true)
+    try {
+      const response = await fetch(`/api/inventory/${editingItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+      if (response.ok) {
+        // Update local state
+        setFeedData(prev => {
+          if (!prev) return prev
+          const updateItem = (item: ExpiringItem) => {
+            if (item.id !== editingItem.id) return item
+            const newDays = Math.ceil((new Date(editForm.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+            return {
+              ...item,
+              name: editForm.name,
+              expiry_date: editForm.expiry_date,
+              quantity: editForm.quantity,
+              days_until_expiry: newDays,
+            }
+          }
+          return {
+            ...prev,
+            expiring_items: prev.expiring_items.map(updateItem),
+            primary_action: prev.primary_action?.data?.items
+              ? {
+                  ...prev.primary_action,
+                  data: {
+                    ...prev.primary_action.data,
+                    items: prev.primary_action.data.items.map(updateItem),
+                  },
+                }
+              : prev.primary_action,
+          }
+        })
+        setEditingItem(null)
+      }
+    } catch (err) {
+      console.error('Failed to save item:', err)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const getExpiryLabel = (days: number) => {
     if (days <= 0) return { text: 'Expired', color: 'text-red-600 bg-red-100' }
     if (days === 1) return { text: 'Tomorrow', color: 'text-orange-600 bg-orange-100' }
@@ -152,10 +212,64 @@ export default function DashboardPage() {
   }
 
   const { context, primary_action, secondary_actions, expiring_items } = feedData
-  const greeting = GREETINGS[context.time_of_day]
+  const greeting = getGreeting()
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      {/* Edit Item Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditingItem(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Item</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                <input
+                  type="date"
+                  value={editForm.expiry_date}
+                  onChange={e => setEditForm(prev => ({ ...prev, expiry_date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editForm.quantity}
+                  onChange={e => setEditForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditingItem(null)}
+                className="flex-1 py-2 text-gray-600 hover:text-gray-800 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium disabled:opacity-50"
+              >
+                {savingEdit ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDelete(null)}>
@@ -243,11 +357,23 @@ export default function DashboardPage() {
                       const isDeleting = deletingItem === item.id
                       return (
                         <div key={item.id} className={`flex items-center justify-between bg-white/70 rounded-xl px-3 py-2 ${isDeleting ? 'opacity-50' : ''}`}>
-                          <span className="font-medium text-gray-900">{item.name}</span>
+                          <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditModal(item) }}
+                            className="font-medium text-gray-900 hover:text-emerald-600 text-left flex-1"
+                          >
+                            {item.name}
+                          </button>
                           <div className="flex items-center gap-2">
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
                               {expiry.text}
                             </span>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditModal(item) }}
+                              className="w-7 h-7 rounded-full bg-blue-100 hover:bg-blue-200 flex items-center justify-center text-sm"
+                              title="Edit item"
+                            >
+                              ✏️
+                            </button>
                             <button
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete({ id: item.id, name: item.name }) }}
                               disabled={isDeleting}
@@ -328,16 +454,26 @@ export default function DashboardPage() {
               const isDeleting = deletingItem === item.id
               return (
                 <div key={item.id} className={`flex items-center justify-between bg-white/70 rounded-xl px-3 py-2 ${isDeleting ? 'opacity-50' : ''}`}>
-                  <div>
-                    <span className="font-medium text-gray-900">{item.name}</span>
+                  <button
+                    onClick={() => openEditModal(item)}
+                    className="text-left flex-1"
+                  >
+                    <span className="font-medium text-gray-900 hover:text-emerald-600">{item.name}</span>
                     {item.quantity > 1 && (
                       <span className="text-sm text-gray-500 ml-2">x{item.quantity}</span>
                     )}
-                  </div>
+                  </button>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiry.color}`}>
                       {expiry.text}
                     </span>
+                    <button
+                      onClick={() => openEditModal(item)}
+                      className="w-7 h-7 rounded-full bg-blue-100 hover:bg-blue-200 flex items-center justify-center text-sm"
+                      title="Edit item"
+                    >
+                      ✏️
+                    </button>
                     <button
                       onClick={() => setConfirmDelete({ id: item.id, name: item.name })}
                       disabled={isDeleting}
