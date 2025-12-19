@@ -305,18 +305,25 @@ export async function DELETE(request: NextRequest) {
 
     // Delete the inventory item
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { data: deletedData, error } = await (supabase as any)
       .from('inventory_items')
       .delete()
       .eq('id', id)
       .eq('user_id', user.id) // Security: only delete own items
+      .select()
 
     if (error) {
       console.error('Delete error:', error)
-      return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete item', details: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, message: 'Item removed', reason })
+    // Check if anything was actually deleted
+    if (!deletedData || deletedData.length === 0) {
+      console.warn('Delete returned no rows - item may not exist or RLS blocked:', { id, user_id: user.id })
+      // Still return success since the item doesn't exist (idempotent)
+    }
+
+    return NextResponse.json({ success: true, message: 'Item removed', reason, deleted: deletedData?.length || 0 })
   } catch (error) {
     console.error('Inventory delete error:', error)
     return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })

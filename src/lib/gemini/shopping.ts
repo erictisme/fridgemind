@@ -58,7 +58,7 @@ Return ONLY a valid JSON array:
 Do not include any text before or after the JSON.`
 
 export async function parseShoppingText(text: string): Promise<ParsedShoppingItem[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const prompt = `${SMART_PARSE_PROMPT}
 
@@ -118,7 +118,7 @@ export async function generateListFromMeal(
   mealDescription: string,
   inventoryItems: string[]
 ): Promise<MealToListResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const inventoryList = inventoryItems.length > 0
     ? inventoryItems.join(', ')
@@ -183,7 +183,7 @@ export async function suggestAlternatives(
   itemName: string,
   context?: string
 ): Promise<AlternativesResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const contextStr = context ? `\nContext: ${context}` : ''
   const prompt = `${SUGGEST_ALTERNATIVES_PROMPT}

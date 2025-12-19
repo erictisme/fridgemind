@@ -301,7 +301,7 @@ function calculateStats(
 
 async function generateAIInsights(stats: ReturnType<typeof calculateStats>) {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const prompt = `You are a fun, insightful food personality analyst for a "Cooking Wrapped 2025" feature (like Spotify Wrapped but for cooking).
 

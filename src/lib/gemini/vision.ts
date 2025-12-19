@@ -61,7 +61,7 @@ Output format: Return ONLY a valid JSON object with this structure:
 Do not include any text before or after the JSON. Only return the JSON object.`
 
 export async function analyzeImage(imageBase64: string): Promise<VisionResponse> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   // Remove data URL prefix if present
   const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
@@ -141,7 +141,7 @@ export async function estimateExpiry(
   location: string,
   purchaseDate: string
 ): Promise<ExpiryEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const prompt = `${EXPIRY_PROMPT}
 
@@ -204,7 +204,7 @@ export async function estimateStorage(
   itemName: string,
   purchaseDate: string
 ): Promise<StorageEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const prompt = `${STORAGE_PROMPT}
 
@@ -313,7 +313,7 @@ Do not include any text before or after the JSON.`
 
 export async function analyzeNutrition(imageBase64: string): Promise<NutritionEstimate> {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
 
@@ -397,7 +397,7 @@ export async function generateMealSuggestions(
   preferences?: string,
   options?: MealSuggestionOptions
 ): Promise<MealSuggestionAI[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const recipeCount = Math.min(5, Math.max(1, options?.recipeCount || 3))
   const mustUseItems = options?.mustUseItems || []
@@ -515,7 +515,7 @@ Do not include any text before or after the JSON array.`
 export async function estimateHomeMealNutrition(
   items: Array<{ name: string; quantity: number; unit: string }>
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const itemsList = items.map(item => `- ${item.name}: ${item.quantity} ${item.unit}`).join('\n')
 
@@ -591,7 +591,7 @@ Do not include any text before or after the JSON.`
 }
 
 export async function analyzeMultipleImages(imagesBase64: string[]): Promise<VisionResponse> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   // Build content array with all images
   const content: Array<{ inlineData: { mimeType: string; data: string } } | string> = []
@@ -643,7 +643,7 @@ export async function analyzeNutritionFromText(
   description: string,
   userCaption?: string
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const captionContext = userCaption
     ? `\n\nUser's additional notes: "${userCaption}"`
@@ -724,7 +724,7 @@ export async function analyzeNutritionWithCaption(
   imageBase64: string,
   caption: string
 ): Promise<NutritionEstimate> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
 

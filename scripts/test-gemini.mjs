@@ -19,7 +19,7 @@ const genAI = new GoogleGenerativeAI(apiKey)
 
 try {
   // Use a simple text model to test the connection
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const result = await model.generateContent('Say "Hello FridgeMind!" in exactly 3 words.')
   const response = await result.response

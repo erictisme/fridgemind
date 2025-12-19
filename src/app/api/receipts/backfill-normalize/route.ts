@@ -36,7 +36,7 @@ IMPORTANT: Return ONLY the JSON array, no other text.`
 // Process a batch of items with AI
 async function normalizeBatch(items: ReceiptItem[]): Promise<{ normalized_name: string; food_type: string }[]> {
   const itemNames = items.map(i => i.item_name)
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
   const result = await model.generateContent([
     NORMALIZE_PROMPT,

@@ -66,10 +66,20 @@ export default function LogMealPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   useEffect(() => {
     fetchInventory()
   }, [])
+
+  // Auto-analyze when image is set (eating out mode)
+  useEffect(() => {
+    if (image && mealType === 'out' && step === 'capture') {
+      handleAnalyzeOutMeal()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image])
 
   const fetchInventory = async () => {
     try {
@@ -123,6 +133,50 @@ export default function LogMealPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
+  }
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set false if leaving the drop zone entirely
+    if (e.currentTarget === e.target) {
+      setIsDragging(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    setError(null)
+
+    const files = e.dataTransfer.files
+    if (files.length === 0) return
+
+    const file = files[0]
+    if (!file.type.startsWith('image/')) {
+      setError('Please drop an image file')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const compressed = await compressImage(reader.result as string)
+      setImage(compressed)
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleMealTypeSelect = (type: MealType) => {
@@ -443,14 +497,27 @@ export default function LogMealPage() {
             </div>
           ) : (
             <div
+              ref={dropZoneRef}
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-colors"
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${
+                isDragging
+                  ? 'border-amber-500 bg-amber-100'
+                  : 'border-gray-300 hover:border-amber-400 hover:bg-amber-50'
+              }`}
             >
               <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">📸</span>
+                <span className="text-3xl">{isDragging ? '📥' : '📸'}</span>
               </div>
-              <p className="font-medium text-gray-900 mb-1">Take a photo of your meal</p>
-              <p className="text-sm text-gray-500">We'll estimate the nutritional content</p>
+              <p className="font-medium text-gray-900 mb-1">
+                {isDragging ? 'Drop your photo here' : 'Take or drop a photo'}
+              </p>
+              <p className="text-sm text-gray-500">
+                {isDragging ? 'Release to upload' : 'Drag & drop or click to select'}
+              </p>
             </div>
           )}
 
@@ -462,15 +529,6 @@ export default function LogMealPage() {
             onChange={handleFileSelect}
             className="hidden"
           />
-
-          {image && (
-            <button
-              onClick={handleAnalyzeOutMeal}
-              className="w-full py-4 bg-amber-600 text-white rounded-xl font-medium hover:bg-amber-700 transition-colors"
-            >
-              Analyze Nutrition
-            </button>
-          )}
         </div>
       )}
 
