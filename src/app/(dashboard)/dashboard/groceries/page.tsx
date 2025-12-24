@@ -30,6 +30,11 @@ interface ReceiptItem {
   total_price: number
 }
 
+interface EditableReceiptItem extends ReceiptItem {
+  id: string
+  editing?: boolean
+}
+
 interface ParsedReceipt {
   store_name: string
   receipt_date: string
@@ -79,10 +84,28 @@ export default function HistoryPage() {
   const [uploading, setUploading] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'staples' | 'receipts' | 'upload'>(initialTab)
 
+  // Import status tracking
+  const [importStatus, setImportStatus] = useState<Record<string, {
+    count: number
+    added_at: string
+    can_undo: boolean
+  }>>({})
+  const [loadingImportStatus, setLoadingImportStatus] = useState(false)
+
   // New state for inventory flow
   const [lastParsedReceipt, setLastParsedReceipt] = useState<ParsedReceipt | null>(null)
+  const [lastReceiptId, setLastReceiptId] = useState<string | null>(null) // Track receipt ID for undo
+  const [editableItems, setEditableItems] = useState<EditableReceiptItem[]>([])
   const [addingToInventory, setAddingToInventory] = useState(false)
   const [inventorySuccess, setInventorySuccess] = useState<string | null>(null)
+
+  // Undo state
+  const [undoInfo, setUndoInfo] = useState<{
+    receipt_id: string
+    item_count: number
+    added_at: Date
+  } | null>(null)
+  const [undoing, setUndoing] = useState(false)
 
   // Bulk upload state
   const [bulkProgress, setBulkProgress] = useState<{
@@ -95,7 +118,6 @@ export default function HistoryPage() {
   } | null>(null)
 
   // Text paste state
-  const [showTextInput, setShowTextInput] = useState(false)
   const [receiptText, setReceiptText] = useState('')
   const [parsingText, setParsingText] = useState(false)
 
@@ -175,6 +197,13 @@ export default function HistoryPage() {
         setStaples(data.staples || [])
         setStaplesCounts(data.counts || { total: 0, staples: 0, occasional: 0, unclassified: 0 })
       }
+
+      // Fetch import status
+      const importStatusRes = await fetch('/api/receipts/import-status')
+      if (importStatusRes.ok) {
+        const data = await importStatusRes.json()
+        setImportStatus(data.imports || {})
+      }
     } catch (error) {
       console.error('Error fetching data:', error)
     }
@@ -220,6 +249,12 @@ export default function HistoryPage() {
         if (res.ok) {
           console.log('[groceries] Receipt parsed successfully:', data.parsed)
           setLastParsedReceipt(data.parsed)
+          setLastReceiptId(data.receipt?.id || null) // Store receipt ID for undo
+          // Convert items to editable format
+          setEditableItems(data.parsed.items.map((item: ReceiptItem, idx: number) => ({
+            ...item,
+            id: `item-${idx}-${Date.now()}`,
+          })))
           fetchData()
         } else if (data.duplicate) {
           alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
@@ -310,8 +345,12 @@ export default function HistoryPage() {
 
       if (res.ok && data.success) {
         setLastParsedReceipt(data.parsed)
+        // Convert items to editable format
+        setEditableItems(data.parsed.items.map((item: ReceiptItem, idx: number) => ({
+          ...item,
+          id: `item-${idx}-${Date.now()}`,
+        })))
         setReceiptText('')
-        setShowTextInput(false)
         fetchData()
       } else if (data.duplicate) {
         alert(`Duplicate receipt - already have ${data.existing.store} receipt from ${data.existing.date}`)
@@ -326,11 +365,11 @@ export default function HistoryPage() {
   }
 
   const handleAddToInventory = async () => {
-    console.log('[groceries] handleAddToInventory called, lastParsedReceipt:', lastParsedReceipt)
-    if (!lastParsedReceipt) return
+    console.log('[groceries] handleAddToInventory called, editableItems:', editableItems)
+    if (!lastParsedReceipt || editableItems.length === 0) return
 
     // Filter out household items
-    const foodItems = lastParsedReceipt.items.filter(
+    const foodItems = editableItems.filter(
       item => item.category !== 'household'
     )
 
@@ -343,6 +382,7 @@ export default function HistoryPage() {
 
     const payload = {
       receipt_date: lastParsedReceipt.receipt_date,
+      receipt_id: lastReceiptId, // Pass receipt ID for tracking
       items: foodItems.map(item => ({
         name: item.name,
         quantity: item.quantity,
@@ -370,9 +410,24 @@ export default function HistoryPage() {
         }
 
         if (data.inserted > 0) {
-          // Redirect to inventory to see the added items
-          console.log('[groceries] Success! Redirecting to inventory...')
-          router.push('/dashboard/inventory')
+          // Store undo info if we have a receipt_id
+          if (data.receipt_id) {
+            setUndoInfo({
+              receipt_id: data.receipt_id,
+              item_count: data.inserted,
+              added_at: new Date(),
+            })
+            setInventorySuccess(`Added ${data.inserted} items to inventory`)
+            setAddingToInventory(false)
+            // Clear the parsed receipt UI
+            setLastParsedReceipt(null)
+            setLastReceiptId(null)
+            setEditableItems([])
+          } else {
+            // No receipt_id - just redirect as before
+            console.log('[groceries] Success! Redirecting to inventory...')
+            router.push('/dashboard/inventory')
+          }
         } else {
           alert('No items were added. Check console for errors.')
           setAddingToInventory(false)
@@ -386,6 +441,64 @@ export default function HistoryPage() {
       alert(error instanceof Error ? error.message : 'Error adding to inventory')
       setAddingToInventory(false)
     }
+  }
+
+  const handleUndoInventory = async () => {
+    if (!undoInfo) return
+
+    if (!confirm(`Remove ${undoInfo.item_count} items from inventory?`)) return
+
+    setUndoing(true)
+    try {
+      const res = await fetch('/api/receipts/undo-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipt_id: undoInfo.receipt_id }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        console.log('[groceries] Undo successful:', data)
+        setInventorySuccess(`Removed ${data.deleted} items from inventory`)
+        setUndoInfo(null)
+        // Refresh data
+        await fetchData()
+      } else {
+        alert(data.error || 'Failed to undo')
+      }
+    } catch (error) {
+      console.error('[groceries] Undo error:', error)
+      alert(error instanceof Error ? error.message : 'Error undoing import')
+    }
+    setUndoing(false)
+  }
+
+  const handleUndoFromReceiptsList = async (receiptId: string, itemCount: number) => {
+    if (!confirm(`Remove ${itemCount} items from inventory?`)) return
+
+    setLoadingImportStatus(true)
+    try {
+      const res = await fetch('/api/receipts/undo-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipt_id: receiptId }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        console.log('[groceries] Undo successful:', data)
+        // Refresh data to update import status
+        await fetchData()
+      } else {
+        alert(data.error || 'Failed to undo')
+      }
+    } catch (error) {
+      console.error('[groceries] Undo error:', error)
+      alert(error instanceof Error ? error.message : 'Error undoing import')
+    }
+    setLoadingImportStatus(false)
   }
 
   const deleteReceipt = async (id: string) => {
@@ -629,6 +742,17 @@ export default function HistoryPage() {
 
   const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`
 
+  // Item editing functions
+  const updateItem = (id: string, updates: Partial<EditableReceiptItem>) => {
+    setEditableItems(prev => prev.map(item =>
+      item.id === id ? { ...item, ...updates } : item
+    ))
+  }
+
+  const removeItem = (id: string) => {
+    setEditableItems(prev => prev.filter(item => item.id !== id))
+  }
+
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
       produce: 'bg-green-500',
@@ -660,12 +784,12 @@ export default function HistoryPage() {
     )
   }
 
-  const foodItemsCount = lastParsedReceipt?.items.filter(i => i.category !== 'household').length || 0
+  const foodItemsCount = editableItems.filter(i => i.category !== 'household').length
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">History</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Bills & Receipts</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('overview')}
@@ -713,19 +837,47 @@ export default function HistoryPage() {
       {/* Upload Tab */}
       {activeTab === 'upload' && (
         <div className="space-y-6">
-          {/* Success message */}
+          {/* Success message with undo */}
           {inventorySuccess && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">✅</span>
-                <span className="text-emerald-800 font-medium">{inventorySuccess}</span>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">✅</span>
+                  <span className="text-emerald-800 font-medium">{inventorySuccess}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setInventorySuccess(null)
+                    setUndoInfo(null)
+                  }}
+                  className="text-emerald-600 hover:text-emerald-800"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                onClick={() => setInventorySuccess(null)}
-                className="text-emerald-600 hover:text-emerald-800"
-              >
-                ✕
-              </button>
+              {undoInfo && (() => {
+                const now = new Date()
+                const elapsed = now.getTime() - undoInfo.added_at.getTime()
+                const twentyFourHours = 24 * 60 * 60 * 1000
+                const remaining = twentyFourHours - elapsed
+                const hoursLeft = Math.floor(remaining / (60 * 60 * 1000))
+                const canUndo = remaining > 0
+
+                return canUndo ? (
+                  <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between">
+                    <span className="text-sm text-emerald-700">
+                      Undo available for {hoursLeft}h {Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000))}m
+                    </span>
+                    <button
+                      onClick={handleUndoInventory}
+                      disabled={undoing}
+                      className="px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium"
+                    >
+                      {undoing ? 'Undoing...' : 'Undo'}
+                    </button>
+                  </div>
+                ) : null
+              })()}
             </div>
           )}
 
@@ -762,36 +914,130 @@ export default function HistoryPage() {
                 </div>
               </div>
 
-              {/* Items list (read-only, just for review) */}
+              {/* Items list (editable) */}
               <div className="border-t pt-4">
                 <p className="text-sm text-gray-500 mb-3">
-                  AI will determine storage location (fridge/freezer/pantry) for each item
+                  Review and edit items before adding. AI will determine storage location (fridge/freezer/pantry) for each item.
                 </p>
-                <div className="grid gap-2 max-h-64 overflow-y-auto">
-                  {lastParsedReceipt.items.map((item, i) => {
+                <div className="grid gap-3 max-h-96 overflow-y-auto pr-2">
+                  {editableItems.map((item) => {
                     const isHousehold = item.category === 'household'
+                    const isEditing = item.editing
+
                     return (
                       <div
-                        key={i}
-                        className={`flex items-center justify-between py-2 px-3 rounded-lg ${
-                          isHousehold ? 'bg-gray-100 text-gray-400' : 'bg-gray-50'
+                        key={item.id}
+                        className={`border rounded-lg p-3 ${
+                          isHousehold ? 'bg-gray-50 border-gray-200' : 'bg-white border-emerald-200'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span>{CATEGORY_EMOJI[item.category] || '📦'}</span>
-                          <span className={isHousehold ? 'line-through' : ''}>
-                            {item.name}
-                          </span>
-                          {isHousehold && (
-                            <span className="text-xs bg-gray-200 px-2 py-0.5 rounded">skipped</span>
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-500">
-                          {item.quantity} {item.unit}
-                        </span>
+                        {isEditing ? (
+                          // Edit mode
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-gray-500">Name</label>
+                                <input
+                                  type="text"
+                                  value={item.name}
+                                  onChange={(e) => updateItem(item.id, { name: e.target.value })}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500">Quantity & Unit</label>
+                                <div className="flex gap-1">
+                                  <input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
+                                    className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    step="0.1"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={item.unit}
+                                    onChange={(e) => updateItem(item.id, { unit: e.target.value })}
+                                    className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Category</label>
+                              <select
+                                value={item.category}
+                                onChange={(e) => updateItem(item.id, { category: e.target.value })}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              >
+                                <option value="produce">🥬 Produce</option>
+                                <option value="dairy">🥛 Dairy</option>
+                                <option value="protein">🍖 Protein</option>
+                                <option value="pantry">🥫 Pantry</option>
+                                <option value="beverage">🥤 Beverage</option>
+                                <option value="frozen">❄️ Frozen</option>
+                                <option value="snacks">🍪 Snacks</option>
+                                <option value="bakery">🍞 Bakery</option>
+                                <option value="household">🧹 Household</option>
+                                <option value="other">📦 Other</option>
+                              </select>
+                            </div>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => updateItem(item.id, { editing: false })}
+                                className="px-3 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                              >
+                                Done
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          // View mode
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span>{CATEGORY_EMOJI[item.category] || '📦'}</span>
+                              <span className={`font-medium truncate ${isHousehold ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                {item.name}
+                              </span>
+                              {isHousehold && (
+                                <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">skipped</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-500">
+                                {item.quantity} {item.unit}
+                              </span>
+                              <button
+                                onClick={() => updateItem(item.id, { editing: true })}
+                                className="p-1 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                                title="Edit item"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Remove "${item.name}" from the list?`)) {
+                                    removeItem(item.id)
+                                  }
+                                }}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Remove item"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
+                  {editableItems.length === 0 && (
+                    <p className="text-center text-gray-400 py-4">No items to display</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -853,16 +1099,16 @@ export default function HistoryPage() {
           )}
 
           {/* Upload area */}
-          {!lastParsedReceipt && !bulkProgress && !showTextInput && (
+          {!lastParsedReceipt && !bulkProgress && (
             <div className="space-y-4">
               {/* File upload */}
-              <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-8">
+              <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-6">
                 <div className="text-center">
-                  <div className="text-4xl mb-4">🧾</div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Upload Receipts
+                  <div className="text-3xl mb-3">🧾</div>
+                  <h3 className="text-base font-semibold text-gray-900 mb-2">
+                    Upload Receipt Files
                   </h3>
-                  <p className="text-gray-600 mb-4">
+                  <p className="text-sm text-gray-600 mb-3">
                     Select one or multiple PDFs/images. Duplicates are auto-detected.
                   </p>
                   <input
@@ -876,7 +1122,7 @@ export default function HistoryPage() {
                   />
                   <label
                     htmlFor="file-upload"
-                    className={`inline-block px-6 py-3 rounded-lg font-medium cursor-pointer ${
+                    className={`inline-block px-6 py-2.5 rounded-lg font-medium cursor-pointer ${
                       uploading
                         ? 'bg-gray-300 text-gray-500'
                         : 'bg-emerald-600 text-white hover:bg-emerald-700'
@@ -887,47 +1133,21 @@ export default function HistoryPage() {
                 </div>
               </div>
 
-              {/* Divider */}
-              <div className="flex items-center gap-4">
-                <div className="flex-1 border-t border-gray-200"></div>
-                <span className="text-sm text-gray-400">or</span>
-                <div className="flex-1 border-t border-gray-200"></div>
-              </div>
-
-              {/* Text paste option */}
-              <button
-                onClick={() => setShowTextInput(true)}
-                className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-emerald-300 hover:bg-emerald-50 transition-colors text-left"
-              >
-                <div className="flex items-center gap-3">
+              {/* Text paste section - always visible */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+                <div className="flex items-center gap-3 mb-2">
                   <span className="text-2xl">📝</span>
                   <div>
-                    <div className="font-medium text-gray-900">Paste Receipt Text</div>
-                    <div className="text-sm text-gray-500">
+                    <h3 className="font-semibold text-gray-900">Paste Receipt Text</h3>
+                    <p className="text-sm text-gray-500">
                       Copy-paste from email, online order, or boutique receipt
-                    </div>
+                    </p>
                   </div>
                 </div>
-              </button>
-            </div>
-          )}
-
-          {/* Text input mode */}
-          {showTextInput && !lastParsedReceipt && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Paste Receipt Text</h3>
-                <button
-                  onClick={() => { setShowTextInput(false); setReceiptText('') }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  Cancel
-                </button>
-              </div>
-              <textarea
-                value={receiptText}
-                onChange={(e) => setReceiptText(e.target.value)}
-                placeholder="Paste your receipt here...
+                <textarea
+                  value={receiptText}
+                  onChange={(e) => setReceiptText(e.target.value)}
+                  placeholder="Paste your receipt here...
 
 Example:
 FairPrice Xtra
@@ -938,31 +1158,32 @@ Milk 1L - $2.90
 Chicken Breast 500g - $8.50
 
 Total: $14.90"
-                className="w-full h-64 p-4 border border-gray-200 rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                disabled={parsingText}
-              />
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => { setShowTextInput(false); setReceiptText('') }}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="w-full h-48 p-4 border border-gray-200 rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   disabled={parsingText}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleTextPaste}
-                  disabled={parsingText || receiptText.trim().length < 10}
-                  className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center gap-2"
-                >
-                  {parsingText ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      Parsing...
-                    </>
-                  ) : (
-                    'Parse Receipt'
-                  )}
-                </button>
+                />
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setReceiptText('')}
+                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                    disabled={parsingText || !receiptText.trim()}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={handleTextPaste}
+                    disabled={parsingText || receiptText.trim().length < 10}
+                    className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center gap-2"
+                  >
+                    {parsingText ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Parsing...
+                      </>
+                    ) : (
+                      'Parse Receipt'
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1418,21 +1639,55 @@ Total: $14.90"
                         {receipt.file_name}
                       </div>
                     )}
+                    {importStatus[receipt.id] && (
+                      <div className="text-xs text-emerald-600 font-medium mt-1">
+                        {importStatus[receipt.id].count} items in inventory
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => openImportModal(receipt)}
-                    className="p-2 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
-                    title="Add to inventory"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                      />
-                    </svg>
-                  </button>
+                  {importStatus[receipt.id]?.can_undo ? (
+                    <button
+                      onClick={() => handleUndoFromReceiptsList(receipt.id, importStatus[receipt.id].count)}
+                      disabled={loadingImportStatus}
+                      className="p-2 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                      title="Undo import to inventory"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+                        />
+                      </svg>
+                    </button>
+                  ) : importStatus[receipt.id] ? (
+                    <div className="p-2 text-gray-400" title="Import was more than 24h ago">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => openImportModal(receipt)}
+                      className="p-2 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                      title="Add to inventory"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                        />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={() => deleteReceipt(receipt.id)}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"

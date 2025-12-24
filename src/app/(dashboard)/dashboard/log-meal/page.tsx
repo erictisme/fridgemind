@@ -2,25 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { uploadMealPhoto } from '@/lib/supabase/storage'
 
-interface InventoryItem {
+interface FatSecretFood {
   id: string
   name: string
-  quantity: number
-  unit: string
-  nutritional_type: string
-  location: string
-}
-
-interface SelectedItem {
-  id: string
-  name: string
-  quantity: number
-  maxQuantity: number
-  unit: string
+  brand?: string
+  description?: string
 }
 
 interface NutritionData {
+  food_id?: string
+  food_name?: string
   meal_name: string
   detected_components: string[]
   estimated_calories: number
@@ -31,94 +25,81 @@ interface NutritionData {
   vegetable_servings: number
   health_assessment: string
   notes: string
-}
-
-interface HouseholdMember {
-  id: string
-  name: string
-  portion: number // percentage 0-100
+  source: 'fatsecret' | 'gemini' | 'manual'
 }
 
 type MealSource = 'home' | 'out'
-type MealType = 'home' | 'out' // keep for backward compatibility
 type MealTime = 'breakfast' | 'lunch' | 'dinner' | 'snack'
-type Step = 'choose' | 'select-items' | 'capture' | 'analyzing' | 'result'
+type Step = 'capture' | 'search' | 'analyzing' | 'result' | 'leftovers'
 
-const HOUSEHOLD_MEMBERS: HouseholdMember[] = [
-  { id: 'eric', name: 'Eric', portion: 50 },
-  { id: 'yy', name: 'YY', portion: 50 },
-]
-
-const HEALTH_BADGES: Record<string, { label: string; color: string; emoji: string }> = {
-  balanced: { label: 'Balanced', color: 'bg-green-100 text-green-700', emoji: '✅' },
-  protein_heavy: { label: 'Protein Heavy', color: 'bg-blue-100 text-blue-700', emoji: '💪' },
-  carb_heavy: { label: 'Carb Heavy', color: 'bg-amber-100 text-amber-700', emoji: '🍞' },
-  high_fat: { label: 'High Fat', color: 'bg-orange-100 text-orange-700', emoji: '🧈' },
-  vegetable_rich: { label: 'Veggie Rich', color: 'bg-emerald-100 text-emerald-700', emoji: '🥗' },
-  light: { label: 'Light', color: 'bg-sky-100 text-sky-700', emoji: '🍃' },
-}
-
-// Food emojis for types
-const typeEmojis: Record<string, string> = {
-  protein: '🍖',
-  carbs: '🍞',
-  fibre: '🥬',
-  misc: '📦',
-  vegetables: '🥬',
-  vitamins: '🥬',
-  fats: '📦',
-  other: '📦',
+const getMealTimeFromHour = (): MealTime => {
+  const hour = new Date().getHours()
+  if (hour < 11) return 'breakfast'
+  if (hour < 15) return 'lunch'
+  if (hour < 21) return 'dinner'
+  return 'snack'
 }
 
 export default function LogMealPage() {
-  const [mealType, setMealType] = useState<MealType | null>(null)
-  const [step, setStep] = useState<Step>('choose')
-  const [inventory, setInventory] = useState<InventoryItem[]>([])
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
+  const router = useRouter()
+  const [step, setStep] = useState<Step>('capture')
+  const [mealSource, setMealSource] = useState<MealSource>('out')
   const [image, setImage] = useState<string | null>(null)
+  const [mealName, setMealName] = useState('')
+  const [restaurantName, setRestaurantName] = useState('')
   const [nutrition, setNutrition] = useState<NutritionData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const dropZoneRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  // FatSecret search
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<FatSecretFood[]>([])
+  const [searching, setSearching] = useState(false)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Meal metadata
   const [mealDate, setMealDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [mealTime, setMealTime] = useState<MealTime>(() => {
-    const hour = new Date().getHours()
-    if (hour < 11) return 'breakfast'
-    if (hour < 15) return 'lunch'
-    if (hour < 21) return 'dinner'
-    return 'snack'
-  })
-  const [householdPortions, setHouseholdPortions] = useState<HouseholdMember[]>(HOUSEHOLD_MEMBERS)
-  const [divideBy, setDivideBy] = useState<number>(1) // For receipts - divide total by X people
+  const [mealTime, setMealTime] = useState<MealTime>(getMealTimeFromHour)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetchInventory()
-  }, [])
+  // Leftovers
+  const [leftoverName, setLeftoverName] = useState('')
+  const [leftoverExpiry, setLeftoverExpiry] = useState(3)
 
-  // Auto-analyze when image is set (eating out mode)
+  // Debounced FatSecret search
   useEffect(() => {
-    if (image && mealType === 'out' && step === 'capture') {
-      handleAnalyzeOutMeal()
+    if (searchQuery.length < 2) {
+      setSearchResults([])
+      return
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image])
 
-  const fetchInventory = async () => {
-    try {
-      const response = await fetch('/api/inventory')
-      if (response.ok) {
-        const data = await response.json()
-        setInventory(data.items || [])
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const response = await fetch(`/api/fatsecret/search?q=${encodeURIComponent(searchQuery)}&max=8`)
+        if (response.ok) {
+          const data = await response.json()
+          setSearchResults(data.foods || [])
+        }
+      } catch (err) {
+        console.error('Search error:', err)
+      } finally {
+        setSearching(false)
       }
-    } catch (err) {
-      console.error('Failed to fetch inventory:', err)
+    }, 300)
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
     }
-  }
+  }, [searchQuery])
 
   const compressImage = (dataUrl: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
     return new Promise((resolve) => {
@@ -154,6 +135,8 @@ export default function LogMealPage() {
     reader.onload = async () => {
       const compressed = await compressImage(reader.result as string)
       setImage(compressed)
+      // Auto-analyze with Gemini to identify food
+      handleAnalyzePhoto(compressed)
     }
     reader.readAsDataURL(file)
 
@@ -162,7 +145,6 @@ export default function LogMealPage() {
     }
   }
 
-  // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -172,7 +154,6 @@ export default function LogMealPage() {
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only set false if leaving the drop zone entirely
     if (e.currentTarget === e.target) {
       setIsDragging(false)
     }
@@ -202,383 +183,265 @@ export default function LogMealPage() {
     reader.onload = async () => {
       const compressed = await compressImage(reader.result as string)
       setImage(compressed)
+      handleAnalyzePhoto(compressed)
     }
     reader.readAsDataURL(file)
   }
 
-  const handleMealTypeSelect = (type: MealType) => {
-    setMealType(type)
-    if (type === 'home') {
-      setStep('select-items')
-    } else {
-      setStep('capture')
-    }
-  }
-
-  const toggleItemSelection = (item: InventoryItem) => {
-    setSelectedItems(prev => {
-      const existing = prev.find(s => s.id === item.id)
-      if (existing) {
-        return prev.filter(s => s.id !== item.id)
-      } else {
-        return [...prev, {
-          id: item.id,
-          name: item.name,
-          quantity: 1,
-          maxQuantity: item.quantity,
-          unit: item.unit,
-        }]
-      }
-    })
-  }
-
-  const updateItemQuantity = (id: string, quantity: number) => {
-    setSelectedItems(prev =>
-      prev.map(item =>
-        item.id === id ? { ...item, quantity: Math.min(Math.max(0.5, quantity), item.maxQuantity) } : item
-      )
-    )
-  }
-
-  const handleAnalyzeHomeMeal = async () => {
-    if (selectedItems.length === 0) {
-      setError('Please select at least one item')
-      return
-    }
-
+  const handleAnalyzePhoto = async (imageData: string) => {
     setStep('analyzing')
     setError(null)
 
     try {
-      const response = await fetch('/api/log-meal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'home',
-          items: selectedItems.map(item => ({
-            id: item.id,
-            name: item.name,
-            quantity: item.quantity,
-            unit: item.unit,
-          })),
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to log meal')
-      }
-
-      const data = await response.json()
-      setNutrition(data.nutrition)
-      setStep('result')
-    } catch (err) {
-      console.error('Log meal error:', err)
-      setError('Failed to log meal. Please try again.')
-      setStep('select-items')
-    }
-  }
-
-  const handleAnalyzeOutMeal = async () => {
-    if (!image) return
-
-    setStep('analyzing')
-    setError(null)
-
-    try {
+      // Step 1: Use Gemini to identify the food
       const response = await fetch('/api/log-meal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'out',
-          image,
+          image: imageData,
         }),
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        const errorMsg = errorData.details || errorData.error || 'Failed to analyze meal'
-        console.error('API error:', errorMsg)
-        throw new Error(errorMsg)
+        throw new Error('Failed to analyze meal')
       }
 
       const data = await response.json()
-      setNutrition(data.nutrition)
+      const identifiedName = data.nutrition.meal_name
+      setMealName(identifiedName)
+
+      // Step 2: Auto-search FatSecret for the identified food
+      try {
+        const fsResponse = await fetch(`/api/fatsecret/search?q=${encodeURIComponent(identifiedName)}&max=5`)
+        if (fsResponse.ok) {
+          const fsData = await fsResponse.json()
+          if (fsData.foods && fsData.foods.length > 0) {
+            // Found FatSecret results - show search step with pre-filled results
+            setSearchQuery(identifiedName)
+            setSearchResults(fsData.foods)
+            setStep('search')
+            return
+          }
+        }
+      } catch (fsErr) {
+        console.error('FatSecret search failed:', fsErr)
+      }
+
+      // Fallback: No FatSecret results, use Gemini estimate
+      setNutrition({
+        ...data.nutrition,
+        source: 'gemini',
+      })
       setStep('result')
     } catch (err) {
       console.error('Analysis error:', err)
-      const errorMessage = err instanceof Error ? err.message : 'Failed to analyze meal. Please try again.'
-      setError(errorMessage)
-      setStep('capture')
+      setError('Failed to analyze. Try searching instead.')
+      setStep('search')
     }
   }
 
-  const resetForm = () => {
-    setMealType(null)
-    setStep('choose')
-    setSelectedItems([])
-    setImage(null)
-    setNutrition(null)
+  const handleFatSecretSelect = async (food: FatSecretFood) => {
+    setLoading(true)
     setError(null)
-    setMealDate(new Date().toISOString().split('T')[0])
-    const hour = new Date().getHours()
-    setMealTime(hour < 11 ? 'breakfast' : hour < 15 ? 'lunch' : hour < 21 ? 'dinner' : 'snack')
-    setHouseholdPortions(HOUSEHOLD_MEMBERS)
-    setDivideBy(1)
+
+    try {
+      const response = await fetch(`/api/fatsecret/food?id=${food.id}`)
+      if (!response.ok) throw new Error('Failed to get nutrition')
+
+      const data = await response.json()
+      setNutrition({
+        food_id: data.food_id,
+        food_name: data.food_name,
+        meal_name: data.food_name + (data.brand_name ? ` (${data.brand_name})` : ''),
+        detected_components: [],
+        estimated_calories: data.calories,
+        protein_grams: data.protein_grams,
+        carbs_grams: data.carbs_grams,
+        fat_grams: data.fat_grams,
+        fiber_grams: data.fiber_grams || 0,
+        vegetable_servings: 0,
+        health_assessment: 'balanced',
+        notes: data.serving_description,
+        source: 'fatsecret',
+      })
+      setMealName(data.food_name + (data.brand_name ? ` (${data.brand_name})` : ''))
+      setSearchQuery('')
+      setSearchResults([])
+      setStep('result')
+    } catch (err) {
+      console.error('FatSecret lookup error:', err)
+      setError('Failed to get nutrition data')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const updatePortions = (memberId: string, newPortion: number) => {
-    setHouseholdPortions(prev => prev.map(m =>
-      m.id === memberId ? { ...m, portion: Math.max(0, Math.min(100, newPortion)) } : m
-    ))
-  }
+  const handleQuickSave = async () => {
+    if (!mealName.trim()) {
+      setError('Please enter a meal name')
+      return
+    }
 
-  const toggleMemberActive = (memberId: string) => {
-    setHouseholdPortions(prev => {
-      const member = prev.find(m => m.id === memberId)
-      if (!member) return prev
+    setSaving(true)
+    setError(null)
 
-      if (member.portion > 0) {
-        // Deactivate: set to 0
-        return prev.map(m => m.id === memberId ? { ...m, portion: 0 } : m)
-      } else {
-        // Activate: split evenly with other active members
-        const activeCount = prev.filter(m => m.portion > 0).length + 1
-        const evenPortion = Math.round(100 / activeCount)
-        return prev.map(m => {
-          if (m.id === memberId) return { ...m, portion: evenPortion }
-          if (m.portion > 0) return { ...m, portion: evenPortion }
-          return m
-        })
+    try {
+      const eatenAt = new Date(mealDate)
+      const now = new Date()
+      eatenAt.setHours(now.getHours(), now.getMinutes(), 0, 0)
+
+      // Upload photo to Supabase Storage if present
+      let imageUrl: string | null = null
+      if (image) {
+        // Get user ID from session
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (user) {
+          imageUrl = await uploadMealPhoto(image, user.id)
+        }
       }
-    })
+
+      const response = await fetch('/api/meals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meal_name: mealName,
+          meal_type: mealTime,
+          restaurant_name: mealSource === 'out' ? restaurantName || null : null,
+          image_url: imageUrl,
+          eaten_at: eatenAt.toISOString(),
+          source: mealSource === 'home' ? 'home' : 'restaurant',
+          estimated_calories: nutrition?.estimated_calories || null,
+          protein_grams: nutrition?.protein_grams || null,
+          carbs_grams: nutrition?.carbs_grams || null,
+          fat_grams: nutrition?.fat_grams || null,
+          fiber_grams: nutrition?.fiber_grams || null,
+          vegetable_servings: nutrition?.vegetable_servings || null,
+          detected_components: nutrition?.detected_components || null,
+          health_assessment: nutrition?.health_assessment || null,
+          fatsecret_food_id: nutrition?.food_id || null,
+          nutrition_source: nutrition?.source || 'manual',
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save meal')
+
+      // Show leftovers prompt for home meals
+      if (mealSource === 'home') {
+        setLeftoverName(`Leftover ${mealName}`)
+        setStep('leftovers')
+      } else {
+        router.push('/dashboard/meals')
+      }
+    } catch (err) {
+      console.error('Save error:', err)
+      setError('Failed to save meal')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const healthBadge = nutrition ? HEALTH_BADGES[nutrition.health_assessment] || HEALTH_BADGES.balanced : null
+  const handleSaveLeftovers = async () => {
+    if (!leftoverName.trim()) {
+      router.push('/dashboard/meals')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const expiryDate = new Date()
+      expiryDate.setDate(expiryDate.getDate() + leftoverExpiry)
+
+      const response = await fetch('/api/leftovers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: leftoverName,
+          location: 'fridge',
+          expiry_date: expiryDate.toISOString().split('T')[0],
+          nutritional_type: 'misc',
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save leftovers')
+    } catch (err) {
+      console.error('Leftovers error:', err)
+      // Don't block navigation on leftovers error
+    } finally {
+      setSaving(false)
+      router.push('/dashboard/meals')
+    }
+  }
 
   return (
-    <div className="max-w-2xl mx-auto pb-20">
+    <div className="max-w-2xl mx-auto pb-20 px-4">
       {/* Header */}
-      <div className="mb-6">
-        <Link href="/dashboard" className="text-gray-500 hover:text-gray-700 text-sm">
-          &larr; Home
+      <div className="mb-6 pt-2">
+        <Link href="/dashboard/meals" className="text-gray-500 hover:text-gray-700 text-sm">
+          &larr; Meals
         </Link>
         <h1 className="text-2xl font-bold text-gray-900 mt-1">Log Meal</h1>
-        <p className="text-gray-500">Track what you're eating</p>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-xl">
+        <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-xl text-sm">
           {error}
         </div>
       )}
 
-      {/* Step 1: Choose meal type */}
-      {step === 'choose' && (
-        <div className="space-y-6">
-          <p className="text-gray-600 text-center">Where are you eating?</p>
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => handleMealTypeSelect('home')}
-              className="p-6 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 transition-all text-center"
-            >
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <span className="text-3xl">🏠</span>
-              </div>
-              <h3 className="font-semibold text-gray-900">At Home</h3>
-              <p className="text-sm text-gray-500 mt-1">Select from inventory</p>
-            </button>
-
-            <button
-              onClick={() => handleMealTypeSelect('out')}
-              className="p-6 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-center"
-            >
-              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <span className="text-3xl">🍽️</span>
-              </div>
-              <h3 className="font-semibold text-gray-900">Eating Out</h3>
-              <p className="text-sm text-gray-500 mt-1">Take a photo</p>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2a: Select items from inventory (home meal) */}
-      {step === 'select-items' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-900">What are you eating?</h2>
-              <p className="text-sm text-gray-500">Select items from your inventory</p>
-            </div>
-            <button
-              onClick={() => { setStep('choose'); setMealType(null); setSelectedItems([]) }}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              ← Back
-            </button>
-          </div>
-
-          {inventory.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">🧊</span>
-              </div>
-              <p className="text-gray-500 mb-4">Your inventory is empty</p>
-              <Link
-                href="/dashboard/scan"
-                className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-              >
-                Scan Your Kitchen
-              </Link>
-            </div>
-          ) : (
-            <>
-              {/* Inventory items */}
-              <div className="space-y-2">
-                {inventory.map(item => {
-                  const isSelected = selectedItems.some(s => s.id === item.id)
-                  const selectedItem = selectedItems.find(s => s.id === item.id)
-                  const emoji = typeEmojis[item.nutritional_type] || '📦'
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`rounded-xl border-2 transition-all ${
-                        isSelected
-                          ? 'border-emerald-500 bg-emerald-50'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <div
-                        onClick={() => toggleItemSelection(item)}
-                        className="p-4 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
-                            isSelected
-                              ? 'bg-emerald-500 border-emerald-500 text-white'
-                              : 'border-gray-300'
-                          }`}>
-                            {isSelected && (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <span className="text-xl">{emoji}</span>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-gray-900">{item.name}</h3>
-                            <p className="text-sm text-gray-500">
-                              {item.quantity} {item.unit} available • {item.location}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quantity selector when selected */}
-                      {isSelected && selectedItem && (
-                        <div className="px-4 pb-4 pt-0">
-                          <div className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-200">
-                            <span className="text-sm text-gray-600">Amount used:</span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); updateItemQuantity(item.id, selectedItem.quantity - 0.5) }}
-                              className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold"
-                            >
-                              -
-                            </button>
-                            <span className="font-medium text-gray-900 min-w-[60px] text-center">
-                              {selectedItem.quantity} {item.unit}
-                            </span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); updateItemQuantity(item.id, selectedItem.quantity + 0.5) }}
-                              className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Selected summary and submit */}
-              {selectedItems.length > 0 && (
-                <div className="sticky bottom-0 bg-white border-t border-gray-200 -mx-4 px-4 py-4 mt-4">
-                  <div className="mb-3">
-                    <p className="text-sm text-gray-600">
-                      Selected: {selectedItems.map(i => `${i.quantity} ${i.unit} ${i.name}`).join(', ')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleAnalyzeHomeMeal}
-                    className="w-full py-4 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 transition-colors"
-                  >
-                    Log Meal ({selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''})
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Step 2b: Capture photo (eating out) */}
+      {/* Quick Capture Step */}
       {step === 'capture' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-900">Take a photo</h2>
-              <p className="text-sm text-gray-500">We'll estimate the nutrition</p>
-            </div>
+          {/* Source Toggle */}
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
             <button
-              onClick={() => { setStep('choose'); setMealType(null); setImage(null) }}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              onClick={() => setMealSource('out')}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+                mealSource === 'out'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600'
+              }`}
             >
-              ← Back
+              🍽️ Eating Out
+            </button>
+            <button
+              onClick={() => setMealSource('home')}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+                mealSource === 'home'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600'
+              }`}
+            >
+              🏠 Home
             </button>
           </div>
 
-          {image ? (
-            <div className="relative">
-              <img
-                src={image}
-                alt="Meal"
-                className="w-full aspect-video object-cover rounded-2xl"
-              />
-              <button
-                onClick={() => setImage(null)}
-                className="absolute top-3 right-3 w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70"
-              >
-                ×
-              </button>
+          {/* Photo Upload */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
+              isDragging
+                ? 'border-emerald-500 bg-emerald-50'
+                : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50'
+            }`}
+          >
+            <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <span className="text-2xl">{isDragging ? '📥' : '📸'}</span>
             </div>
-          ) : (
-            <div
-              ref={dropZoneRef}
-              onClick={() => fileInputRef.current?.click()}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${
-                isDragging
-                  ? 'border-amber-500 bg-amber-100'
-                  : 'border-gray-300 hover:border-amber-400 hover:bg-amber-50'
-              }`}
-            >
-              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">{isDragging ? '📥' : '📸'}</span>
-              </div>
-              <p className="font-medium text-gray-900 mb-1">
-                {isDragging ? 'Drop your photo here' : 'Take or drop a photo'}
-              </p>
-              <p className="text-sm text-gray-500">
-                {isDragging ? 'Release to upload' : 'Drag & drop or click to select'}
-              </p>
-            </div>
-          )}
+            <p className="font-medium text-gray-900 mb-1">
+              {isDragging ? 'Drop photo here' : 'Add a photo'}
+            </p>
+            <p className="text-sm text-gray-500">
+              We&apos;ll identify the food automatically
+            </p>
+          </div>
 
           <input
             ref={fileInputRef}
@@ -588,280 +451,356 @@ export default function LogMealPage() {
             onChange={handleFileSelect}
             className="hidden"
           />
+
+          {/* Divider */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-sm text-gray-400">or</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          {/* Search / Manual Entry */}
+          <button
+            onClick={() => setStep('search')}
+            className="w-full py-4 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"
+          >
+            <span>🔍</span> Search for food
+          </button>
         </div>
       )}
 
-      {/* Step 3: Analyzing */}
+      {/* Search Step */}
+      {step === 'search' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setStep('capture')}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ←
+            </button>
+            <h2 className="font-semibold text-gray-900">Search for food</h2>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="e.g., chicken rice, laksa..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400"
+              autoFocus
+            />
+            {searching && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
+
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <>
+              <p className="text-sm text-gray-500">Select for accurate nutrition:</p>
+              <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+                {searchResults.map((food) => (
+                  <button
+                    key={food.id}
+                    onClick={() => handleFatSecretSelect(food)}
+                    disabled={loading}
+                    className="w-full p-4 text-left hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <div className="font-medium text-gray-900">{food.name}</div>
+                    {food.brand && (
+                      <div className="text-sm text-gray-500">{food.brand}</div>
+                    )}
+                    {food.description && (
+                      <div className="text-xs text-gray-400 mt-1 truncate">{food.description}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  setNutrition(null)
+                  setStep('result')
+                }}
+                className="w-full py-3 text-gray-500 text-sm hover:text-gray-700"
+              >
+                Skip nutrition lookup →
+              </button>
+            </>
+          )}
+
+          {/* Manual Entry Option */}
+          {searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
+            <div className="text-center py-6">
+              <p className="text-gray-500 mb-3">No results found</p>
+              <button
+                onClick={() => {
+                  setMealName(searchQuery)
+                  setNutrition(null)
+                  setStep('result')
+                }}
+                className="text-emerald-600 hover:underline"
+              >
+                Log &quot;{searchQuery}&quot; without nutrition →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analyzing */}
       {step === 'analyzing' && (
         <div className="text-center py-16">
-          <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-lg font-medium text-gray-900">
-            {mealType === 'home' ? 'Calculating nutrition...' : 'Analyzing your meal...'}
-          </p>
-          <p className="text-gray-500">
-            {mealType === 'home' ? 'Estimating combined nutrition' : 'Estimating nutritional content'}
-          </p>
+          <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-lg font-medium text-gray-900">Identifying food...</p>
+          <p className="text-gray-500">This may take a moment</p>
         </div>
       )}
 
-      {/* Step 4: Results */}
-      {step === 'result' && nutrition && (
-        <div className="space-y-6">
-          {/* Meal photo or placeholder */}
-          <div className="relative">
-            {image ? (
+      {/* Result Step */}
+      {step === 'result' && (
+        <div className="space-y-5">
+          {/* Photo preview */}
+          {image && (
+            <div className="relative">
               <img
                 src={image}
                 alt="Meal"
                 className="w-full aspect-video object-cover rounded-2xl"
               />
-            ) : (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-video bg-gray-100 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
+              <button
+                onClick={() => setImage(null)}
+                className="absolute top-2 right-2 w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70"
               >
-                <span className="text-4xl mb-2">📷</span>
-                <span className="text-sm text-gray-500">Add photo</span>
-              </div>
-            )}
-          </div>
+                ×
+              </button>
+            </div>
+          )}
 
-          {/* Meal name and health badge */}
+          {/* Meal Name */}
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{nutrition.meal_name}</h2>
-            {healthBadge && (
-              <span className={`inline-flex items-center gap-1 text-sm px-3 py-1 rounded-full mt-2 ${healthBadge.color}`}>
-                {healthBadge.emoji} {healthBadge.label}
-              </span>
-            )}
+            <label className="block text-sm font-medium text-gray-700 mb-1">What did you eat?</label>
+            <input
+              type="text"
+              value={mealName}
+              onChange={(e) => setMealName(e.target.value)}
+              placeholder="e.g., Chicken Rice"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900"
+            />
           </div>
 
-          {/* Quick Metadata Form */}
-          <div className="bg-gray-50 rounded-2xl p-4 space-y-4">
-            {/* Date & Meal Time */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                <input
-                  type="date"
-                  value={mealDate}
-                  onChange={(e) => setMealDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Meal</label>
-                <select
-                  value={mealTime}
-                  onChange={(e) => setMealTime(e.target.value as MealTime)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
-                >
-                  <option value="breakfast">🌅 Breakfast</option>
-                  <option value="lunch">☀️ Lunch</option>
-                  <option value="dinner">🌙 Dinner</option>
-                  <option value="snack">🍿 Snack</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Who ate - Household portions */}
+          {/* Quick Metadata */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-2">Who ate this?</label>
-              <div className="space-y-2">
-                {householdPortions.map((member) => (
-                  <div key={member.id} className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleMemberActive(member.id)}
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-                        member.portion > 0
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-gray-200 text-gray-400'
-                      }`}
-                    >
-                      {member.name[0]}
-                    </button>
-                    <span className={`text-sm font-medium w-12 ${member.portion > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
-                      {member.name}
-                    </span>
-                    {member.portion > 0 && (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={member.portion}
-                          onChange={(e) => updatePortions(member.id, parseInt(e.target.value))}
-                          className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
-                        <span className="text-sm font-medium text-gray-700 w-12 text-right">{member.portion}%</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {/* Portion warning if not 100% */}
-              {householdPortions.reduce((sum, m) => sum + m.portion, 0) !== 100 && householdPortions.some(m => m.portion > 0) && (
-                <p className="text-xs text-amber-600 mt-2">
-                  ⚠️ Portions total {householdPortions.reduce((sum, m) => sum + m.portion, 0)}% (should be 100%)
-                </p>
-              )}
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+              <input
+                type="date"
+                value={mealDate}
+                onChange={(e) => setMealDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
+              />
             </div>
-
-            {/* Divide by (for sharing/receipts) */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Divide by <span className="text-gray-400">(e.g., shared with others)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setDivideBy(Math.max(1, divideBy - 1))}
-                  className="w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
-                >
-                  -
-                </button>
-                <span className="text-lg font-bold text-gray-900 w-8 text-center">{divideBy}</span>
-                <button
-                  onClick={() => setDivideBy(divideBy + 1)}
-                  className="w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
-                >
-                  +
-                </button>
-                <span className="text-sm text-gray-500 ml-2">
-                  {divideBy > 1 ? `(${Math.round(nutrition.estimated_calories / divideBy)} cal each)` : 'person'}
+              <label className="block text-xs font-medium text-gray-600 mb-1">Meal</label>
+              <select
+                value={mealTime}
+                onChange={(e) => setMealTime(e.target.value as MealTime)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white text-sm"
+              >
+                <option value="breakfast">🌅 Breakfast</option>
+                <option value="lunch">☀️ Lunch</option>
+                <option value="dinner">🌙 Dinner</option>
+                <option value="snack">🍪 Snack</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Restaurant Name (for eating out) */}
+          {mealSource === 'out' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Where? (optional)</label>
+              <input
+                type="text"
+                value={restaurantName}
+                onChange={(e) => setRestaurantName(e.target.value)}
+                placeholder="e.g., Maxwell Food Centre"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm"
+              />
+            </div>
+          )}
+
+          {/* Nutrition (if available) - Editable */}
+          {nutrition && (
+            <div className="bg-gray-50 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-900">Nutrition</h3>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  nutrition.source === 'fatsecret'
+                    ? 'bg-green-100 text-green-700'
+                    : nutrition.source === 'manual'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-200 text-gray-600'
+                }`}>
+                  {nutrition.source === 'fatsecret' ? '✓ FatSecret' : nutrition.source === 'manual' ? 'Manual' : 'AI Estimated'}
                 </span>
               </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <div className="bg-white rounded-lg p-2">
+                  <input
+                    type="number"
+                    value={nutrition.estimated_calories}
+                    onChange={(e) => setNutrition({ ...nutrition, estimated_calories: parseInt(e.target.value) || 0, source: 'manual' })}
+                    className="w-full text-lg font-bold text-gray-900 text-center bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded"
+                  />
+                  <div className="text-xs text-gray-500 text-center">Cal</div>
+                </div>
+                <div className="bg-white rounded-lg p-2">
+                  <input
+                    type="number"
+                    value={nutrition.protein_grams}
+                    onChange={(e) => setNutrition({ ...nutrition, protein_grams: parseInt(e.target.value) || 0, source: 'manual' })}
+                    className="w-full text-lg font-bold text-blue-600 text-center bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded"
+                  />
+                  <div className="text-xs text-gray-500 text-center">Protein</div>
+                </div>
+                <div className="bg-white rounded-lg p-2">
+                  <input
+                    type="number"
+                    value={nutrition.carbs_grams}
+                    onChange={(e) => setNutrition({ ...nutrition, carbs_grams: parseInt(e.target.value) || 0, source: 'manual' })}
+                    className="w-full text-lg font-bold text-amber-600 text-center bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded"
+                  />
+                  <div className="text-xs text-gray-500 text-center">Carbs</div>
+                </div>
+                <div className="bg-white rounded-lg p-2">
+                  <input
+                    type="number"
+                    value={nutrition.fat_grams}
+                    onChange={(e) => setNutrition({ ...nutrition, fat_grams: parseInt(e.target.value) || 0, source: 'manual' })}
+                    className="w-full text-lg font-bold text-orange-600 text-center bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded"
+                  />
+                  <div className="text-xs text-gray-500 text-center">Fat</div>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-400 mt-2 text-center">Tap to edit values</p>
+
+              {nutrition.notes && (
+                <p className="text-xs text-gray-500 mt-1">{nutrition.notes}</p>
+              )}
             </div>
-          </div>
+          )}
 
-          {/* Nutrition breakdown (collapsed summary) */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Nutrition</h3>
-              <span className="text-sm text-gray-500">
-                {divideBy > 1 ? `÷${divideBy} = ` : ''}
-                {Math.round(nutrition.estimated_calories / divideBy)} cal
-              </span>
-            </div>
+          {/* No nutrition - offer to search */}
+          {!nutrition && (
+            <button
+              onClick={() => {
+                setSearchQuery(mealName)
+                setStep('search')
+              }}
+              className="w-full py-3 border border-gray-300 rounded-xl text-gray-600 text-sm hover:bg-gray-50"
+            >
+              🔍 Search FatSecret for nutrition data
+            </button>
+          )}
 
-            {/* Compact macros */}
-            <div className="grid grid-cols-5 gap-2 text-center">
-              <div className="bg-orange-50 rounded-lg p-2">
-                <div className="text-lg font-bold text-orange-600">{Math.round(nutrition.estimated_calories / divideBy)}</div>
-                <div className="text-xs text-orange-600">Cal</div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-2">
-                <div className="text-lg font-bold text-blue-600">{Math.round(nutrition.protein_grams / divideBy)}g</div>
-                <div className="text-xs text-blue-600">Protein</div>
-              </div>
-              <div className="bg-amber-50 rounded-lg p-2">
-                <div className="text-lg font-bold text-amber-600">{Math.round(nutrition.carbs_grams / divideBy)}g</div>
-                <div className="text-xs text-amber-600">Carbs</div>
-              </div>
-              <div className="bg-purple-50 rounded-lg p-2">
-                <div className="text-lg font-bold text-purple-600">{Math.round(nutrition.fat_grams / divideBy)}g</div>
-                <div className="text-xs text-purple-600">Fat</div>
-              </div>
-              <div className="bg-green-50 rounded-lg p-2">
-                <div className="text-lg font-bold text-green-600">{(nutrition.vegetable_servings / divideBy).toFixed(1)}</div>
-                <div className="text-xs text-green-600">Veggies</div>
-              </div>
-            </div>
-
-            {/* Components */}
-            {nutrition.detected_components.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1">
-                {nutrition.detected_components.map((component, i) => (
-                  <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">
-                    {component}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Meal source badge */}
+          {/* Source badge */}
           <div className="flex items-center gap-2">
             <span className={`text-xs px-3 py-1 rounded-full ${
-              mealType === 'home'
-                ? 'bg-emerald-100 text-emerald-700'
+              mealSource === 'home'
+                ? 'bg-purple-100 text-purple-700'
                 : 'bg-amber-100 text-amber-700'
             }`}>
-              {mealType === 'home' ? '🏠 Home Meal' : '🍽️ Eating Out'}
+              {mealSource === 'home' ? '🏠 Home Meal' : '🍽️ Eating Out'}
             </span>
-            {mealType === 'home' && (
-              <span className="text-xs text-gray-500">
-                Inventory will be updated
-              </span>
-            )}
           </div>
 
           {/* Actions */}
-          <div className="flex gap-4">
+          <div className="flex gap-3 pt-2">
             <button
-              onClick={resetForm}
+              onClick={() => {
+                setStep('capture')
+                setImage(null)
+                setMealName('')
+                setNutrition(null)
+              }}
               disabled={saving}
               className="flex-1 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
-              onClick={async () => {
-                setSaving(true)
-                try {
-                  // Combine date and time to create eaten_at timestamp
-                  const eatenAt = new Date(mealDate)
-                  const now = new Date()
-                  eatenAt.setHours(now.getHours(), now.getMinutes(), 0, 0)
-
-                  // Calculate nutrition per person (divide by divideBy, then apply portion)
-                  const activeMembers = householdPortions.filter(m => m.portion > 0)
-
-                  // Save meal for each household member with their portion
-                  for (const member of activeMembers) {
-                    const portionMultiplier = (member.portion / 100) / divideBy
-
-                    const response = await fetch('/api/log-meal/save', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        meal_name: nutrition.meal_name,
-                        meal_source: mealType === 'home' ? 'home_cooked' : 'restaurant',
-                        meal_time: mealTime,
-                        eaten_at: eatenAt.toISOString(),
-                        household_member: member.name,
-                        portion_percentage: member.portion,
-                        divide_by: divideBy,
-                        // Nutrition scaled by portion
-                        estimated_calories: Math.round(nutrition.estimated_calories * portionMultiplier),
-                        protein_grams: Math.round(nutrition.protein_grams * portionMultiplier),
-                        carbs_grams: Math.round(nutrition.carbs_grams * portionMultiplier),
-                        fat_grams: Math.round(nutrition.fat_grams * portionMultiplier),
-                        fiber_grams: nutrition.fiber_grams ? Math.round(nutrition.fiber_grams * portionMultiplier) : null,
-                        vegetable_servings: parseFloat((nutrition.vegetable_servings * portionMultiplier).toFixed(1)),
-                        detected_components: nutrition.detected_components,
-                        health_assessment: nutrition.health_assessment,
-                        ai_notes: nutrition.notes,
-                        image_url: image || null,
-                      }),
-                    })
-
-                    if (!response.ok) {
-                      throw new Error('Failed to save meal')
-                    }
-                  }
-
-                  resetForm()
-                } catch (err) {
-                  console.error('Save error:', err)
-                  setError('Failed to save meal. Please try again.')
-                } finally {
-                  setSaving(false)
-                }
-              }}
-              disabled={saving}
+              onClick={handleQuickSave}
+              disabled={saving || !mealName.trim()}
               className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Meal'}
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leftovers Prompt */}
+      {step === 'leftovers' && (
+        <div className="space-y-6">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">🥡</span>
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Any leftovers?</h2>
+            <p className="text-gray-500">Add them to your fridge inventory</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Leftover name</label>
+            <input
+              type="text"
+              value={leftoverName}
+              onChange={(e) => setLeftoverName(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Eat within
+            </label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 5, 7].map((days) => (
+                <button
+                  key={days}
+                  onClick={() => setLeftoverExpiry(days)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    leftoverExpiry === days
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {days}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => router.push('/dashboard/meals')}
+              disabled={saving}
+              className="flex-1 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleSaveLeftovers}
+              disabled={saving || !leftoverName.trim()}
+              className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Add to Fridge'}
             </button>
           </div>
         </div>

@@ -11,6 +11,7 @@ export interface ParsedShoppingItem {
   quantity: number
   unit: string
   category: string
+  recipe_group: string | null
 }
 
 export interface MealIngredient {
@@ -50,10 +51,26 @@ Rules:
 - Clean up item names (capitalize properly, fix typos if obvious)
 - Combine duplicates
 
+Recipe Pattern Detection:
+- Detect recipe patterns like "Recipe name: item1, item2, item3"
+- Also detect multi-line format like:
+  Recipe name:
+  - item1
+  - item2
+- If a recipe pattern is detected, set "recipe_group" to the recipe name for all items in that group
+- If no recipe pattern is detected, set "recipe_group" to null
+- Multiple recipes can be in the same input
+- Example patterns:
+  * "Mushroom soup: mushrooms, cream, onion"
+  * "Pasta: pasta, tomato sauce, parmesan"
+  * "Mushroom soup:\nmushrooms\ncream\nonion"
+
 Return ONLY a valid JSON array:
 [
-  { "name": "Item Name", "quantity": 1, "unit": "pc", "category": "produce" }
+  { "name": "Item Name", "quantity": 1, "unit": "pc", "category": "produce", "recipe_group": "Recipe Name" }
 ]
+
+If no recipe pattern is detected, set recipe_group to null for all items.
 
 Do not include any text before or after the JSON.`
 
@@ -82,6 +99,7 @@ User input: "${text}"`
       quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
       unit: item.unit || 'pc',
       category: item.category || 'other',
+      recipe_group: item.recipe_group || null,
     }))
   } catch (err) {
     console.error('Failed to parse shopping text response:', responseText, err)

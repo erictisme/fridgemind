@@ -278,23 +278,39 @@ export interface NutritionEstimate {
   contains_processed_food?: boolean
 }
 
-const NUTRITION_PROMPT = `You are a nutrition expert. Analyze this photo of a meal and estimate its nutritional content.
+const NUTRITION_PROMPT = `You are a nutrition expert specializing in Southeast Asian cuisine, especially Singapore hawker food.
 
-Consider typical portion sizes. Be realistic but conservative with estimates.
+CRITICAL: Be CONSERVATIVE with estimates. Most people overestimate calories and protein.
+
+ESTIMATION METHOD - Break down by component:
+1. Identify each component (rice, protein, vegetables, sauce)
+2. Estimate portion SIZE in grams for each
+3. Calculate nutrition for each component
+4. Sum the totals
+
+PORTION REFERENCE (Singapore hawker portions):
+- 1 scoop white rice: ~150g = 195 cal, 4g protein, 43g carbs
+- Fish fillet (palm-sized ~80g): 120 cal, 18g protein
+- Curry/gravy (2 tbsp): 50 cal, 5g fat
+- Stir-fried vegetables (1 portion): 50-80 cal, 2g protein
+- Fried egg: 90 cal, 6g protein
+- Chicken thigh piece: 150 cal, 15g protein
+
+COMMON MISTAKES TO AVOID:
+- Rice has very little protein (~3g per 150g serving)
+- Don't assume large meat portions - hawker portions are modest
+- Account for oil/gravy adding fat calories
 
 IMPORTANT - Detect these health flags:
-- sodium_level: Estimate based on visible sauces, seasonings, processed ingredients, restaurant-style cooking
-  - "low": Fresh, lightly seasoned, no visible sauces
-  - "moderate": Some sauce/seasoning, typical home cooking
-  - "high": Heavy sauces, soy sauce, processed items, fast food, salted snacks
-- is_fried: True if food appears deep-fried, pan-fried with oil, or has crispy battered coating
-- contains_red_meat: True if beef, pork, lamb, or other red meat is visible
-- contains_processed_food: True if processed meats (bacon, sausage, ham), packaged snacks, or heavily processed ingredients visible
+- sodium_level: "low" | "moderate" | "high" (hawker food is typically moderate-high)
+- is_fried: True if deep-fried or pan-fried with visible oil
+- contains_red_meat: True if beef, pork, lamb visible
+- contains_processed_food: True if processed meats, packaged items
 
 Return ONLY a valid JSON object with this structure:
 {
   "meal_name": "Descriptive name of the dish",
-  "detected_components": ["component1", "component2", ...],
+  "detected_components": ["component1 ~Xg", "component2 ~Xg", ...],
   "estimated_calories": number,
   "protein_grams": number,
   "carbs_grams": number,
@@ -306,7 +322,7 @@ Return ONLY a valid JSON object with this structure:
   "is_fried": boolean,
   "contains_red_meat": boolean,
   "contains_processed_food": boolean,
-  "notes": "Brief observation about the meal's nutrition"
+  "notes": "Brief breakdown of each component's estimated calories"
 }
 
 Do not include any text before or after the JSON.`

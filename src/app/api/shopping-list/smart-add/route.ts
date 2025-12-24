@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
       quantity: item.quantity,
       unit: item.unit,
       category: item.category,
+      recipe_group: item.recipe_group,
       source: 'smart_add',
       is_checked: false,
       priority: 0,

@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, category, quantity, unit } = body
+    const { name, category, quantity, unit, notes } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Item name required' }, { status: 400 })
@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
         category: category || null,
         quantity: quantity || 1,
         unit: unit || null,
+        notes: notes || null,
         is_checked: false,
         priority: 0,
       })

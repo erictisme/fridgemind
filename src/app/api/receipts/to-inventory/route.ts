@@ -12,6 +12,7 @@ interface ReceiptItemWithInventory {
 interface RequestBody {
   items: ReceiptItemWithInventory[]
   receipt_date: string
+  receipt_id?: string // Optional: track which receipt these items came from
 }
 
 // Map receipt categories to inventory storage_category and nutritional_type
@@ -40,8 +41,8 @@ export async function POST(request: NextRequest) {
     console.log('[to-inventory] User authenticated:', user.id)
 
     const body = await request.json() as RequestBody
-    const { items, receipt_date } = body
-    console.log('[to-inventory] Received:', { itemCount: items?.length, receipt_date })
+    const { items, receipt_date, receipt_id } = body
+    console.log('[to-inventory] Received:', { itemCount: items?.length, receipt_date, receipt_id })
 
     if (!items || items.length === 0) {
       console.log('[to-inventory] No items provided')
@@ -110,6 +111,9 @@ export async function POST(request: NextRequest) {
             expiry_date: storageEstimate.expiry_date, // AI decides expiry
             freshness: 'fresh',
             confidence: 1.0,
+            // Track receipt source for undo functionality
+            source_receipt_id: receipt_id || null,
+            added_from_receipt_at: receipt_id ? new Date().toISOString() : null,
           })
 
         if (error) {
@@ -134,6 +138,7 @@ export async function POST(request: NextRequest) {
       success: true,
       inserted: insertedItems.length,
       items: insertedItems,
+      receipt_id: receipt_id || null, // Return receipt_id for undo tracking
       ...(errors.length > 0 && { errors }),
     })
   } catch (error) {
