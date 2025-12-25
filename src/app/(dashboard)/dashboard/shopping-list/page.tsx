@@ -87,6 +87,14 @@ export default function ShoppingListPage() {
     fetchShoppingList()
   }, [])
 
+  // Auto-switch to recipe view when items have recipe groups
+  useEffect(() => {
+    const hasRecipeGroups = items.some(item => item.recipe_group !== null)
+    if (hasRecipeGroups) {
+      setViewMode('recipe')
+    }
+  }, [items])
+
   const fetchShoppingList = async () => {
     try {
       const response = await fetch('/api/shopping-list')

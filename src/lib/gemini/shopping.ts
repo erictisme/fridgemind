@@ -41,36 +41,51 @@ export interface AlternativesResult {
 // 1. Smart Parse - Text dump → structured items
 // ============================================
 
-const SMART_PARSE_PROMPT = `You are a shopping list assistant. Parse the user's messy text input into structured shopping list items.
+const SMART_PARSE_PROMPT = `You are a shopping list assistant. Parse the user's text input into structured shopping list items.
 
-Rules:
-- Extract item names, quantities, and units
-- If quantity is not specified, default to 1
-- Guess appropriate units (pc, pack, bunch, bottle, kg, g, dozen, etc.)
-- Categorize items: produce, dairy, protein, pantry, beverage, frozen, bakery, snacks, household, other
-- Clean up item names (capitalize properly, fix typos if obvious)
-- Combine duplicates
+RECIPE GROUPING (IMPORTANT):
+Look for recipe/meal names followed by colon and ingredients. Formats to detect:
 
-Recipe Pattern Detection:
-- Detect recipe patterns like "Recipe name: item1, item2, item3"
-- Also detect multi-line format like:
-  Recipe name:
-  - item1
-  - item2
-- If a recipe pattern is detected, set "recipe_group" to the recipe name for all items in that group
-- If no recipe pattern is detected, set "recipe_group" to null
-- Multiple recipes can be in the same input
-- Example patterns:
-  * "Mushroom soup: mushrooms, cream, onion"
-  * "Pasta: pasta, tomato sauce, parmesan"
-  * "Mushroom soup:\nmushrooms\ncream\nonion"
+1. Inline format:
+   "Mushroom soup: mushrooms, cream, onion"
+
+2. Multi-line with dashes:
+   "Mushroom soup:
+   - white onion
+   - 3x button mushroom
+   - cream"
+
+3. Multi-line without dashes:
+   "Beef stew:
+   beef
+   carrots
+   potatoes"
+
+4. Multiple recipes in one input:
+   "Mushroom soup:
+   - mushrooms
+   - cream
+
+   Beef stew:
+   - beef
+   - carrots"
+
+For each item in a recipe group, set "recipe_group" to the recipe name (e.g., "Mushroom soup").
+Items not under any recipe should have recipe_group: null.
+
+PARSING RULES:
+- Extract quantities: "3x mushroom" → quantity: 3, "2 carrots" → quantity: 2
+- Default quantity is 1 if not specified
+- Guess units: pc, pack, bunch, bottle, kg, g, dozen, etc.
+- Categories: produce, dairy, protein, pantry, beverage, frozen, bakery, snacks, household, other
+- Clean up names: capitalize properly, remove dashes/bullets
+- Combine exact duplicates (add quantities)
 
 Return ONLY a valid JSON array:
 [
-  { "name": "Item Name", "quantity": 1, "unit": "pc", "category": "produce", "recipe_group": "Recipe Name" }
+  { "name": "White onion", "quantity": 1, "unit": "pc", "category": "produce", "recipe_group": "Mushroom soup" },
+  { "name": "Button mushroom", "quantity": 3, "unit": "pc", "category": "produce", "recipe_group": "Mushroom soup" }
 ]
-
-If no recipe pattern is detected, set recipe_group to null for all items.
 
 Do not include any text before or after the JSON.`
 
