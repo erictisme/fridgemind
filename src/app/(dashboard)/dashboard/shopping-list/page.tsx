@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 
 interface Alternative {
   name: string
@@ -68,8 +68,10 @@ export default function ShoppingListPage() {
   const [editCategory, setEditCategory] = useState<string>('')
   const [editNotes, setEditNotes] = useState('')
 
-  // Checked section collapse state
-  const [checkedSectionCollapsed, setCheckedSectionCollapsed] = useState(false)
+  // Celebration state
+  const [celebration, setCelebration] = useState<{ type: 'recipe' | 'all', message: string } | null>(null)
+  const completedRecipesRef = useRef<Set<string>>(new Set())
+  const hasTriggeredAllComplete = useRef(false)
 
   // View mode: 'category' or 'recipe'
   const [viewMode, setViewMode] = useState<'category' | 'recipe'>('category')
@@ -375,12 +377,8 @@ export default function ShoppingListPage() {
     }
   }
 
-  // Separate checked and unchecked items
-  const checkedItems = items.filter(i => i.is_checked)
-  const uncheckedItems = items.filter(i => !i.is_checked)
-
-  // Group unchecked items by category
-  const groupedUncheckedItems = uncheckedItems.reduce((acc, item) => {
+  // Group ALL items by category (both checked and unchecked)
+  const groupedByCategory = items.reduce((acc, item) => {
     const category = item.category || 'other'
     if (!acc[category]) {
       acc[category] = []
@@ -389,8 +387,8 @@ export default function ShoppingListPage() {
     return acc
   }, {} as Record<string, ShoppingListItem[]>)
 
-  // Group unchecked items by recipe
-  const groupedByRecipe = uncheckedItems.reduce((acc, item) => {
+  // Group ALL items by recipe (both checked and unchecked)
+  const groupedByRecipe = items.reduce((acc, item) => {
     const recipe = item.recipe_group || 'Other Items'
     if (!acc[recipe]) {
       acc[recipe] = []
@@ -399,8 +397,16 @@ export default function ShoppingListPage() {
     return acc
   }, {} as Record<string, ShoppingListItem[]>)
 
+  // Sort items within each group: unchecked first, then checked
+  const sortItemsInGroup = (groupItems: ShoppingListItem[]) => {
+    return [...groupItems].sort((a, b) => {
+      if (a.is_checked === b.is_checked) return 0
+      return a.is_checked ? 1 : -1
+    })
+  }
+
   // Sort categories: uncategorized last
-  const sortedCategories = Object.keys(groupedUncheckedItems).sort((a, b) => {
+  const sortedCategories = Object.keys(groupedByCategory).sort((a, b) => {
     if (a === 'other') return 1
     if (b === 'other') return -1
     return a.localeCompare(b)
@@ -413,8 +419,49 @@ export default function ShoppingListPage() {
     return a.localeCompare(b)
   })
 
-  const uncheckedCount = uncheckedItems.length
-  const checkedCount = checkedItems.length
+  // Calculate progress for each recipe group
+  const getGroupProgress = (groupItems: ShoppingListItem[]) => {
+    const total = groupItems.length
+    const checked = groupItems.filter(i => i.is_checked).length
+    return { checked, total, isComplete: checked === total && total > 0 }
+  }
+
+  const uncheckedCount = items.filter(i => !i.is_checked).length
+  const checkedCount = items.filter(i => i.is_checked).length
+  const allComplete = items.length > 0 && uncheckedCount === 0
+
+  // Check for newly completed recipes and trigger celebration
+  useEffect(() => {
+    if (viewMode !== 'recipe' || items.length === 0) return
+
+    // Check each recipe group for completion
+    const recipes = Object.keys(groupedByRecipe)
+    for (const recipe of recipes) {
+      if (recipe === 'Other Items') continue
+      const recipeItems = groupedByRecipe[recipe]
+      const isComplete = recipeItems.length > 0 && recipeItems.every(i => i.is_checked)
+
+      if (isComplete && !completedRecipesRef.current.has(recipe)) {
+        completedRecipesRef.current.add(recipe)
+        setCelebration({ type: 'recipe', message: `${recipe} done!` })
+        setTimeout(() => setCelebration(null), 2500)
+        break // Only show one celebration at a time
+      }
+    }
+  }, [items, viewMode, groupedByRecipe])
+
+  // Check for all items complete
+  useEffect(() => {
+    if (allComplete && items.length > 0 && !hasTriggeredAllComplete.current) {
+      hasTriggeredAllComplete.current = true
+      setCelebration({ type: 'all', message: 'Shopping complete!' })
+      setTimeout(() => setCelebration(null), 4000)
+    }
+    // Reset when not all complete
+    if (!allComplete) {
+      hasTriggeredAllComplete.current = false
+    }
+  }, [allComplete, items.length])
 
   if (loading) {
     return (
@@ -624,6 +671,47 @@ export default function ShoppingListPage() {
         </form>
       </details>
 
+      {/* Celebration Overlay */}
+      {celebration && (
+        <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center">
+          {/* Confetti animation */}
+          <div className="absolute inset-0 overflow-hidden">
+            {[...Array(celebration.type === 'all' ? 50 : 25)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute animate-confetti"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 0.5}s`,
+                  animationDuration: `${2 + Math.random() * 2}s`,
+                }}
+              >
+                <div
+                  className="w-3 h-3 rounded-sm"
+                  style={{
+                    backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 5)],
+                    transform: `rotate(${Math.random() * 360}deg)`,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {/* Message */}
+          <div className={`bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl px-6 py-4 animate-bounce-in ${
+            celebration.type === 'all' ? 'border-4 border-emerald-400' : 'border-2 border-emerald-300'
+          }`}>
+            <p className={`font-bold text-center ${celebration.type === 'all' ? 'text-2xl' : 'text-lg'} text-gray-900`}>
+              {celebration.type === 'all' ? '🛒 ' : '🎉 '}
+              {celebration.message}
+              {celebration.type === 'all' ? ' 🎉' : ''}
+            </p>
+            {celebration.type === 'all' && (
+              <p className="text-center text-gray-600 mt-1">You did it!</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Shopping List Items */}
       {items.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border-2 border-gray-200">
@@ -636,140 +724,105 @@ export default function ShoppingListPage() {
           <p className="text-sm text-gray-400 mt-1">Add items using the form above</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Checked Items Section - Mobile optimized */}
-          {checkedCount > 0 && (
-            <div className="bg-white rounded-xl border-2 border-emerald-200 overflow-hidden">
-              <button
-                onClick={() => setCheckedSectionCollapsed(!checkedSectionCollapsed)}
-                className="w-full bg-emerald-50 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-emerald-200 flex items-center justify-between hover:bg-emerald-100 active:bg-emerald-100 transition-colors"
-              >
-                <h3 className="font-semibold text-sm sm:text-base text-emerald-700 flex items-center gap-2">
-                  <span className="text-lg sm:text-xl">✅</span>
-                  Checked ({checkedCount})
-                </h3>
-                <svg
-                  className={`w-5 h-5 text-emerald-600 transition-transform ${
-                    checkedSectionCollapsed ? '' : 'rotate-180'
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {!checkedSectionCollapsed && (
-                <div className="divide-y divide-gray-100">
-                  {checkedItems.map(item => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 bg-gray-50/50 hover:bg-gray-100 active:bg-gray-100 transition-colors"
-                    >
-                      <button
-                        onClick={() => handleToggleCheck(item)}
-                        className="flex-shrink-0 w-7 h-7 sm:w-6 sm:h-6 rounded-lg sm:rounded border-2 flex items-center justify-center hover:border-emerald-600 active:scale-95 transition-all"
-                        style={{
-                          backgroundColor: '#059669',
-                          borderColor: '#059669',
-                        }}
-                      >
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </button>
-
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm sm:text-base line-through text-gray-400">{item.name}</p>
-                        {(item.quantity > 1 || item.unit) && (
-                          <p className="text-xs sm:text-sm text-gray-400">
-                            {item.quantity}{item.unit ? ` ${item.unit}` : ''}
-                          </p>
-                        )}
-                        {item.notes && (
-                          <p className="text-xs text-gray-400 mt-0.5 italic line-clamp-1">{item.notes}</p>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 transition-colors"
-                        title="Delete item"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Unchecked Items by Category or Recipe */}
+        <div className="space-y-4">
+          {/* Items by Category or Recipe - checked items stay in their group */}
           {viewMode === 'category' ? (
-            sortedCategories.map(category => (
-              <div key={category} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
-                <div className="bg-gray-50 px-3 sm:px-4 py-2 border-b border-gray-200">
-                  <h3 className="font-semibold text-sm sm:text-base text-gray-700 flex items-center gap-2">
-                    <span className="text-lg sm:text-xl">{categoryEmojis[category]}</span>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                    <span className="text-xs sm:text-sm text-gray-400 font-normal">
-                      ({groupedUncheckedItems[category].length})
-                    </span>
-                  </h3>
-                </div>
+            sortedCategories.map(category => {
+              const categoryItems = sortItemsInGroup(groupedByCategory[category])
+              const progress = getGroupProgress(groupedByCategory[category])
+              return (
+                <div key={category} className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${
+                  progress.isComplete ? 'border-emerald-300 bg-emerald-50/30' : 'border-gray-200'
+                }`}>
+                  <div className={`px-3 sm:px-4 py-2 border-b ${
+                    progress.isComplete ? 'bg-emerald-100 border-emerald-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <h3 className={`font-semibold text-sm sm:text-base flex items-center gap-2 ${
+                        progress.isComplete ? 'text-emerald-700' : 'text-gray-700'
+                      }`}>
+                        <span className="text-lg sm:text-xl">{categoryEmojis[category]}</span>
+                        {category.charAt(0).toUpperCase() + category.slice(1)}
+                      </h3>
+                      <span className={`text-xs sm:text-sm font-medium px-2 py-0.5 rounded-full ${
+                        progress.isComplete
+                          ? 'bg-emerald-200 text-emerald-700'
+                          : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {progress.checked}/{progress.total}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mt-1.5 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          progress.isComplete ? 'bg-emerald-500' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${(progress.checked / progress.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
 
-                <div className="divide-y divide-gray-100">
-                  {groupedUncheckedItems[category].map(item => (
-                    <div key={item.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                      {/* Larger checkbox for mobile */}
-                      <button
-                        onClick={() => handleToggleCheck(item)}
-                        className="flex-shrink-0 w-7 h-7 sm:w-6 sm:h-6 rounded-lg sm:rounded border-2 border-gray-300 flex items-center justify-center hover:border-emerald-500 active:scale-95 transition-all"
-                        style={{
-                          backgroundColor: item.is_checked ? '#059669' : 'white',
-                          borderColor: item.is_checked ? '#059669' : undefined,
-                        }}
+                  <div className="divide-y divide-gray-100">
+                    {categoryItems.map(item => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 transition-colors ${
+                          item.is_checked
+                            ? 'bg-gray-50/50 hover:bg-gray-100'
+                            : 'hover:bg-gray-50 active:bg-gray-100'
+                        }`}
                       >
-                        {item.is_checked && (
-                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleEditItem(item)}
-                        className="flex-1 min-w-0 text-left py-1"
-                        title="Click to edit"
-                      >
-                        <p className="font-medium text-sm sm:text-base text-gray-900">{item.name}</p>
-                        {(item.quantity > 1 || item.unit) && (
-                          <p className="text-xs sm:text-sm text-gray-500">
-                            {item.quantity}{item.unit ? ` ${item.unit}` : ''}
-                          </p>
-                        )}
-                        {item.notes && (
-                          <p className="text-xs text-blue-600 mt-0.5 italic line-clamp-1">{item.notes}</p>
-                        )}
-                      </button>
-
-                      {/* Action buttons - stacked on mobile */}
-                      <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 flex-shrink-0">
                         <button
-                          onClick={() => handleCouldntFind(item)}
-                          className="px-2 py-1.5 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded-md transition-colors whitespace-nowrap"
-                          title="Couldn't find this item"
+                          onClick={() => handleToggleCheck(item)}
+                          className="flex-shrink-0 w-7 h-7 sm:w-6 sm:h-6 rounded-lg sm:rounded border-2 flex items-center justify-center hover:border-emerald-500 active:scale-95 transition-all"
+                          style={{
+                            backgroundColor: item.is_checked ? '#059669' : 'white',
+                            borderColor: item.is_checked ? '#059669' : '#d1d5db',
+                          }}
                         >
-                          Alt?
+                          {item.is_checked && (
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </button>
 
                         <button
+                          onClick={() => handleEditItem(item)}
+                          className="flex-1 min-w-0 text-left py-1"
+                          title="Click to edit"
+                        >
+                          <p className={`font-medium text-sm sm:text-base ${
+                            item.is_checked ? 'line-through text-gray-400' : 'text-gray-900'
+                          }`}>{item.name}</p>
+                          {(item.quantity > 1 || item.unit) && (
+                            <p className={`text-xs sm:text-sm ${item.is_checked ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                            </p>
+                          )}
+                          {item.notes && (
+                            <p className={`text-xs mt-0.5 italic line-clamp-1 ${
+                              item.is_checked ? 'text-gray-400' : 'text-blue-600'
+                            }`}>{item.notes}</p>
+                          )}
+                        </button>
+
+                        {!item.is_checked && (
+                          <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => handleCouldntFind(item)}
+                              className="px-2 py-1.5 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded-md transition-colors whitespace-nowrap"
+                              title="Couldn't find this item"
+                            >
+                              Alt?
+                            </button>
+                          </div>
+                        )}
+
+                        <button
                           onClick={() => handleDeleteItem(item.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 transition-colors"
+                          className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 transition-colors"
                           title="Delete item"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -777,70 +830,108 @@ export default function ShoppingListPage() {
                           </svg>
                         </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           ) : (
-            sortedRecipes.map(recipe => (
-              <div key={recipe} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
-                <div className="bg-gray-50 px-3 sm:px-4 py-2 border-b border-gray-200">
-                  <h3 className="font-semibold text-sm sm:text-base text-gray-700 flex items-center gap-2">
-                    <span className="text-lg sm:text-xl">🍽️</span>
-                    {recipe}
-                    <span className="text-xs sm:text-sm text-gray-400 font-normal">
-                      ({groupedByRecipe[recipe].length})
-                    </span>
-                  </h3>
-                </div>
+            sortedRecipes.map(recipe => {
+              const recipeItems = sortItemsInGroup(groupedByRecipe[recipe])
+              const progress = getGroupProgress(groupedByRecipe[recipe])
+              return (
+                <div key={recipe} className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${
+                  progress.isComplete ? 'border-emerald-300 bg-emerald-50/30' : 'border-gray-200'
+                }`}>
+                  <div className={`px-3 sm:px-4 py-2 border-b ${
+                    progress.isComplete ? 'bg-emerald-100 border-emerald-200' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <h3 className={`font-semibold text-sm sm:text-base flex items-center gap-2 ${
+                        progress.isComplete ? 'text-emerald-700' : 'text-gray-700'
+                      }`}>
+                        <span className="text-lg sm:text-xl">{progress.isComplete ? '✅' : '🍽️'}</span>
+                        {recipe}
+                      </h3>
+                      <span className={`text-xs sm:text-sm font-medium px-2 py-0.5 rounded-full ${
+                        progress.isComplete
+                          ? 'bg-emerald-200 text-emerald-700'
+                          : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {progress.checked}/{progress.total}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mt-1.5 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          progress.isComplete ? 'bg-emerald-500' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${(progress.checked / progress.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
 
-                <div className="divide-y divide-gray-100">
-                  {groupedByRecipe[recipe].map(item => (
-                    <div key={item.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 hover:bg-gray-50 active:bg-gray-100 transition-colors">
-                      <button
-                        onClick={() => handleToggleCheck(item)}
-                        className="flex-shrink-0 w-7 h-7 sm:w-6 sm:h-6 rounded-lg sm:rounded border-2 border-gray-300 flex items-center justify-center hover:border-emerald-500 active:scale-95 transition-all"
-                        style={{
-                          backgroundColor: item.is_checked ? '#059669' : 'white',
-                          borderColor: item.is_checked ? '#059669' : undefined,
-                        }}
+                  <div className="divide-y divide-gray-100">
+                    {recipeItems.map(item => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 transition-colors ${
+                          item.is_checked
+                            ? 'bg-gray-50/50 hover:bg-gray-100'
+                            : 'hover:bg-gray-50 active:bg-gray-100'
+                        }`}
                       >
-                        {item.is_checked && (
-                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleEditItem(item)}
-                        className="flex-1 min-w-0 text-left py-1"
-                        title="Click to edit"
-                      >
-                        <p className="font-medium text-sm sm:text-base text-gray-900">{item.name}</p>
-                        {(item.quantity > 1 || item.unit) && (
-                          <p className="text-xs sm:text-sm text-gray-500">
-                            {item.quantity}{item.unit ? ` ${item.unit}` : ''}
-                          </p>
-                        )}
-                        {item.notes && (
-                          <p className="text-xs text-blue-600 mt-0.5 italic line-clamp-1">{item.notes}</p>
-                        )}
-                      </button>
-
-                      <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 flex-shrink-0">
                         <button
-                          onClick={() => handleCouldntFind(item)}
-                          className="px-2 py-1.5 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded-md transition-colors whitespace-nowrap"
-                          title="Couldn't find this item"
+                          onClick={() => handleToggleCheck(item)}
+                          className="flex-shrink-0 w-7 h-7 sm:w-6 sm:h-6 rounded-lg sm:rounded border-2 flex items-center justify-center hover:border-emerald-500 active:scale-95 transition-all"
+                          style={{
+                            backgroundColor: item.is_checked ? '#059669' : 'white',
+                            borderColor: item.is_checked ? '#059669' : '#d1d5db',
+                          }}
                         >
-                          Alt?
+                          {item.is_checked && (
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </button>
 
                         <button
+                          onClick={() => handleEditItem(item)}
+                          className="flex-1 min-w-0 text-left py-1"
+                          title="Click to edit"
+                        >
+                          <p className={`font-medium text-sm sm:text-base ${
+                            item.is_checked ? 'line-through text-gray-400' : 'text-gray-900'
+                          }`}>{item.name}</p>
+                          {(item.quantity > 1 || item.unit) && (
+                            <p className={`text-xs sm:text-sm ${item.is_checked ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                            </p>
+                          )}
+                          {item.notes && (
+                            <p className={`text-xs mt-0.5 italic line-clamp-1 ${
+                              item.is_checked ? 'text-gray-400' : 'text-blue-600'
+                            }`}>{item.notes}</p>
+                          )}
+                        </button>
+
+                        {!item.is_checked && (
+                          <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => handleCouldntFind(item)}
+                              className="px-2 py-1.5 text-xs text-amber-600 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded-md transition-colors whitespace-nowrap"
+                              title="Couldn't find this item"
+                            >
+                              Alt?
+                            </button>
+                          </div>
+                        )}
+
+                        <button
                           onClick={() => handleDeleteItem(item.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 transition-colors"
+                          className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 transition-colors"
                           title="Delete item"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -848,11 +939,11 @@ export default function ShoppingListPage() {
                           </svg>
                         </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       )}
