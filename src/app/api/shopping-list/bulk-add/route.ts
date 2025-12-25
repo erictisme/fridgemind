@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { items } = body as {
-      items: Array<{ name: string; quantity?: number; unit?: string | null }>
+      items: Array<{ name: string; quantity?: number; unit?: string | null; recipe_group?: string | null }>
     }
 
     if (!items || items.length === 0) {
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       unit: item.unit || null,
       is_checked: false,
       source: 'recipe',
+      recipe_group: item.recipe_group || null,
     }))
 
     // Insert all items

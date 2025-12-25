@@ -49,6 +49,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Filter mustUseItems to only include items that actually exist in inventory
+    // This prevents stale data from the UI from causing issues
+    const inventoryNames = new Set(items.map((i: { name: string }) => i.name.toLowerCase()))
+    const validatedMustUseItems = (mustUseItems || []).filter(
+      (itemName: string) => inventoryNames.has(itemName.toLowerCase())
+    )
+
     // Fetch user's staples
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: staples } = await (supabase as any)
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest) {
     // Generate suggestions with Gemini
     const suggestions = await generateMealSuggestions(items, preferences, {
       recipeCount: recipeCount || 3,
-      mustUseItems: mustUseItems || [],
+      mustUseItems: validatedMustUseItems,
       cookingMethods: cookingMethods || [],
       remarks: remarks || '',
     })
@@ -109,7 +116,11 @@ export async function POST(request: NextRequest) {
       challenge_mode: challenge,
       staples_count: stapleItems.length,
       options_used: {
-        must_use_items: mustUseItems || [],
+        must_use_items: validatedMustUseItems,
+        original_must_use_items: mustUseItems || [],
+        items_removed: (mustUseItems || []).filter(
+          (item: string) => !validatedMustUseItems.includes(item)
+        ),
         recipe_count: recipeCount || 3,
       },
     })

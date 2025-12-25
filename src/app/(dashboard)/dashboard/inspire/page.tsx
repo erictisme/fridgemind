@@ -150,6 +150,15 @@ export default function InspirePage() {
   const [savingSuggestion, setSavingSuggestion] = useState(false)
   const [savedSuggestionIndex, setSavedSuggestionIndex] = useState<number | null>(null)
 
+  // Store last generation params for regeneration
+  const [lastGenerationParams, setLastGenerationParams] = useState<{
+    mustUseItems: string[]
+    recipeCount: number
+    challenge: boolean
+    cookingMethods: string[]
+    remarks: string
+  } | null>(null)
+
   // Input state
   const [inputMode, setInputMode] = useState<InputMode>('none')
   const [urlInput, setUrlInput] = useState('')
@@ -331,7 +340,7 @@ export default function InspirePage() {
     )
   }
 
-  const handleGenerateSuggestions = async (challenge = false) => {
+  const handleGenerateSuggestions = async (challenge = false, useLastParams = false) => {
     setShowSuggestions(true)
     setShowIngredientPicker(false)
     setSuggestionsLoading(true)
@@ -340,17 +349,25 @@ export default function InspirePage() {
     setCurrentRecipeIndex(0)
 
     try {
+      // Get current parameters (either from last generation or current state)
+      const params = useLastParams && lastGenerationParams
+        ? lastGenerationParams
+        : {
+            mustUseItems: selectedIngredients,
+            recipeCount,
+            challenge,
+            cookingMethods: selectedCookingMethods,
+            remarks: remarks.trim(),
+          }
+
+      // Save params for regeneration
+      setLastGenerationParams(params)
+
       // Use POST with options if we have selected ingredients
       const response = await fetch('/api/suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mustUseItems: selectedIngredients,
-          recipeCount,
-          challenge,
-          cookingMethods: selectedCookingMethods,
-          remarks: remarks.trim(),
-        }),
+        body: JSON.stringify(params),
       })
 
       if (!response.ok) {
@@ -401,24 +418,28 @@ export default function InspirePage() {
     }
   }
 
-  const handleAddToShoppingList = async (index: number, ingredients: string[]) => {
+  const handleAddToShoppingList = async (index: number, ingredients: string[], recipeName?: string) => {
     if (ingredients.length === 0) return
 
     setAddingToList(index)
     setAddedSuccess(null)
 
     try {
-      for (const ingredient of ingredients) {
-        await fetch('/api/shopping-list', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: ingredient,
-            quantity: 1,
-            source: 'suggestion',
-          }),
-        })
-      }
+      // Use bulk-add with recipe_group for proper grouping
+      const itemsToAdd = ingredients.map(ingredient => ({
+        name: ingredient,
+        quantity: 1,
+        unit: null,
+        recipe_group: recipeName || null,
+      }))
+
+      const response = await fetch('/api/shopping-list/bulk-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsToAdd }),
+      })
+
+      if (!response.ok) throw new Error('Failed to add items')
 
       setAddedSuccess(index)
       setTimeout(() => setAddedSuccess(null), 3000)
@@ -1476,7 +1497,7 @@ export default function InspirePage() {
       {/* Generated Suggestions - Carousel View */}
       {showSuggestions && (
         <div className="bg-white rounded-xl border-2 border-emerald-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold text-gray-900">
               {challengeMode ? '🎲 Try Something New' : '🤖 Generated Ideas'}
             </h2>
@@ -1487,6 +1508,41 @@ export default function InspirePage() {
               Close
             </button>
           </div>
+
+          {/* Show generation context */}
+          {lastGenerationParams && !suggestionsLoading && (
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap gap-1 text-xs">
+                    {lastGenerationParams.mustUseItems.length > 0 && (
+                      <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                        Using: {lastGenerationParams.mustUseItems.slice(0, 3).join(', ')}
+                        {lastGenerationParams.mustUseItems.length > 3 && ` +${lastGenerationParams.mustUseItems.length - 3}`}
+                      </span>
+                    )}
+                    {lastGenerationParams.cookingMethods.length > 0 && (
+                      <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                        {lastGenerationParams.cookingMethods.join(', ')}
+                      </span>
+                    )}
+                    {lastGenerationParams.remarks && (
+                      <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full truncate max-w-[150px]">
+                        &quot;{lastGenerationParams.remarks}&quot;
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleGenerateSuggestions(challengeMode, true)}
+                  disabled={suggestionsLoading}
+                  className="ml-3 px-3 py-1.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 disabled:opacity-50 whitespace-nowrap"
+                >
+                  🔄 Regenerate
+                </button>
+              </div>
+            </div>
+          )}
 
           {suggestionsLoading ? (
             <div className="text-center py-8">
@@ -1617,7 +1673,7 @@ export default function InspirePage() {
                             <span className="text-xs text-emerald-600 font-medium">✓ Added!</span>
                           ) : (
                             <button
-                              onClick={() => handleAddToShoppingList(currentRecipeIndex, suggestion.additional_ingredients_needed)}
+                              onClick={() => handleAddToShoppingList(currentRecipeIndex, suggestion.additional_ingredients_needed, suggestion.name)}
                               disabled={addingToList === currentRecipeIndex}
                               className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 disabled:opacity-50"
                             >
