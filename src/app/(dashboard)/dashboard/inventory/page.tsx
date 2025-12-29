@@ -858,35 +858,45 @@ export default function InventoryPage() {
 
                 {/* Expanded edit form */}
                 {isExpanded && editingItem && (
-                  <div className="px-3 pb-3 space-y-3 bg-gray-50 border-t border-gray-200">
-                    {/* Quick actions row */}
+                  <div className="px-3 pb-3 space-y-2 bg-gray-50 border-t border-gray-200">
+                    {/* Primary quick actions */}
                     <div className="flex gap-2 pt-3">
                       <button
                         onClick={() => handleRemove('consumed')}
                         disabled={saving}
-                        className="flex-1 px-3 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50"
+                        className="flex-1 px-3 py-3 bg-emerald-500 text-white rounded-xl text-sm font-medium hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50"
                       >
                         ✓ Ate it
                       </button>
                       <button
                         onClick={() => handleRemove('wasted')}
                         disabled={saving}
-                        className="flex-1 px-3 py-2.5 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50"
+                        className="flex-1 px-3 py-3 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50"
                       >
                         🗑 Went bad
                       </button>
+                    </div>
+
+                    {/* Secondary actions */}
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleRemove('wrong_entry')}
                         disabled={saving}
-                        className="px-3 py-2.5 bg-gray-400 text-white rounded-lg text-sm font-medium hover:bg-gray-500 active:bg-gray-600 disabled:opacity-50"
+                        className="flex-1 px-3 py-2 bg-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-300 active:bg-gray-400 disabled:opacity-50"
                       >
-                        ✗
+                        Wrong entry
+                      </button>
+                      <button
+                        onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
+                        className="flex-1 px-3 py-2 bg-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-300 active:bg-gray-400"
+                      >
+                        Still OK
                       </button>
                     </div>
 
                     {/* Edit fields - collapsible */}
-                    <details className="group">
-                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 list-none flex items-center gap-1">
+                    <details className="group pt-1">
+                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 list-none flex items-center gap-1 py-1">
                         <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -900,11 +910,11 @@ export default function InventoryPage() {
                             type="text"
                             value={editingItem.name}
                             onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-base text-gray-900 bg-white"
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
                             <input
@@ -913,7 +923,7 @@ export default function InventoryPage() {
                               step="0.5"
                               value={editingItem.quantity}
                               onChange={(e) => setEditingItem({ ...editingItem, quantity: parseFloat(e.target.value) || 0 })}
-                              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-base text-gray-900 bg-white"
                             />
                           </div>
                           <div>
@@ -921,7 +931,7 @@ export default function InventoryPage() {
                             <select
                               value={editingItem.location}
                               onChange={(e) => setEditingItem({ ...editingItem, location: e.target.value })}
-                              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-base text-gray-900 bg-white"
                             >
                               {LOCATIONS.map(loc => (
                                 <option key={loc} value={loc}>{loc.charAt(0).toUpperCase() + loc.slice(1)}</option>
@@ -939,7 +949,8 @@ export default function InventoryPage() {
                             type="date"
                             value={editingItem.purchase_date?.split('T')[0] || ''}
                             onChange={(e) => handlePurchaseDateChange(e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-base text-gray-900 bg-white appearance-none"
+                            style={{ minHeight: '44px' }}
                           />
                         </div>
 
@@ -954,25 +965,18 @@ export default function InventoryPage() {
                             type="date"
                             value={editingItem.expiry_date?.split('T')[0] || ''}
                             onChange={(e) => updateEditingItem('expiry_date', e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-base text-gray-900 bg-white appearance-none"
+                            style={{ minHeight: '44px' }}
                           />
                         </div>
 
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
-                          >
-                            {saving ? 'Saving...' : 'Save Changes'}
-                          </button>
-                          <button
-                            onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 active:bg-gray-400"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                        <button
+                          onClick={handleSave}
+                          disabled={saving}
+                          className="w-full px-3 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
+                        >
+                          {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
                       </div>
                     </details>
                   </div>
