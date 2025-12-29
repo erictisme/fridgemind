@@ -342,66 +342,82 @@ async function fetchRecipeFromUrl(url: string): Promise<RecipeSearchResult | nul
   }
 }
 
-// Search a specific recipe site for recipes
-async function searchRecipeSite(
-  site: typeof TRUSTED_RECIPE_SITES[0],
-  query: string
-): Promise<string[]> {
+// Search for recipes using DuckDuckGo (no API key needed)
+async function searchWebForRecipes(query: string, limit: number = 6): Promise<string[]> {
   try {
-    const searchUrl = site.searchUrl + encodeURIComponent(query)
+    // Use DuckDuckGo HTML search with site restrictions for quality
+    const trustedDomains = TRUSTED_RECIPE_SITES.slice(0, 8).map(s => s.domain).join(' OR site:')
+    const searchQuery = `${query} recipe (site:${trustedDomains})`
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 8000)
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
 
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0; Recipe Search)',
-        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
       signal: controller.signal,
     })
 
     clearTimeout(timeoutId)
 
-    if (!response.ok) return []
+    if (!response.ok) {
+      console.error('DuckDuckGo search failed:', response.status)
+      return []
+    }
 
     const html = await response.text()
 
-    // Extract recipe URLs from search results
-    // Look for links that look like recipe pages
-    const urlPattern = new RegExp(
-      `https?://(?:www\\.)?${site.domain.replace('.', '\\.')}[^"'\\s]*(?:recipe|recipes)[^"'\\s]*`,
-      'gi'
-    )
+    // Extract result URLs from DuckDuckGo HTML results
+    // DuckDuckGo uses uddg= parameter for redirect URLs
+    const urlMatches: string[] = []
 
-    const matches: string[] = html.match(urlPattern) || []
-
-    // Also try common recipe URL patterns
-    const altPattern = new RegExp(
-      `href="(https?://(?:www\\.)?${site.domain.replace('.', '\\.')}[^"]*)"`,
-      'gi'
-    )
-
-    let altMatch
-    while ((altMatch = altPattern.exec(html)) !== null) {
-      const url = altMatch[1]
-      // Filter for likely recipe URLs (not category pages, etc.)
-      if (url.includes('/recipe') ||
-          url.match(/\/[\w-]+-\d+\/?$/) || // Allrecipes style: /recipe-name-12345/
-          url.match(/\/\d{4}\/\d{2}\//) || // Blog style: /2024/01/recipe-name
-          url.match(/\/[\w-]{20,}\/?$/)) { // Long slug likely recipe
-        matches.push(url)
+    // Pattern for DuckDuckGo result links
+    const resultPattern = /class="result__a"[^>]*href="([^"]+)"/gi
+    let match
+    while ((match = resultPattern.exec(html)) !== null) {
+      let url = match[1]
+      // DuckDuckGo may encode URLs, decode them
+      if (url.includes('uddg=')) {
+        const uddgMatch = url.match(/uddg=([^&]+)/)
+        if (uddgMatch) {
+          url = decodeURIComponent(uddgMatch[1])
+        }
+      }
+      // Only include URLs from trusted recipe sites
+      if (TRUSTED_RECIPE_SITES.some(site => url.includes(site.domain))) {
+        urlMatches.push(url)
       }
     }
 
-    // Deduplicate and limit
-    const uniqueUrls = [...new Set(matches)]
-      .filter(url => !url.includes('/search') && !url.includes('/category'))
-      .slice(0, 3)
+    // Also try direct URL extraction as fallback
+    const directPattern = /href="(https?:\/\/(?:www\.)?(?:seriouseats|recipetineats|budgetbytes|simplyrecipes|woksoflife|justonecookbook|maangchi|allrecipes|bonappetit)[^"]*)">/gi
+    while ((match = directPattern.exec(html)) !== null) {
+      const url = match[1]
+      if (!url.includes('/search') && !url.includes('/category') && !url.includes('/tag')) {
+        urlMatches.push(url)
+      }
+    }
 
+    // Deduplicate and filter
+    const uniqueUrls = [...new Set(urlMatches)]
+      .filter(url =>
+        !url.includes('/search') &&
+        !url.includes('/category') &&
+        !url.includes('/tag') &&
+        !url.includes('/author') &&
+        !url.endsWith('.com') &&
+        !url.endsWith('.com/')
+      )
+      .slice(0, limit + 2)
+
+    console.log(`DuckDuckGo found ${uniqueUrls.length} recipe URLs for "${query}"`)
     return uniqueUrls
   } catch (error) {
-    console.error(`Failed to search ${site.name}:`, error)
+    console.error('Web search error:', error)
     return []
   }
 }
@@ -599,20 +615,18 @@ export async function POST(request: NextRequest) {
     const searchPromises: Promise<RecipeSearchResult[]>[] = []
     const searchedSources: string[] = []
 
-    // Web search (recipe sites)
+    // Web search (recipe sites via DuckDuckGo)
     if (sourceToggles.web) {
-      // Pick relevant sites based on cuisine detection (culturally sensitive)
-      const relevantSites = getRelevantSites(searchQuery, 4)
-      searchedSources.push(...relevantSites.map(s => s.name))
+      searchedSources.push('Web')
 
-      // Create a promise that searches sites and fetches recipes
+      // Create a promise that searches DuckDuckGo and fetches recipes
       const webSearchPromise = (async () => {
-        const urlResults = await Promise.all(
-          relevantSites.map(site => searchRecipeSite(site, searchQuery))
-        )
-        const allUrls = [...new Set(urlResults.flat())]
-        const urlsToFetch = allUrls.slice(0, Math.min(limit + 2, 10))
-        const recipes = await Promise.all(urlsToFetch.map(url => fetchRecipeFromUrl(url)))
+        const recipeUrls = await searchWebForRecipes(searchQuery, limit)
+        if (recipeUrls.length === 0) {
+          console.log('No recipe URLs found from web search')
+          return []
+        }
+        const recipes = await Promise.all(recipeUrls.map(url => fetchRecipeFromUrl(url)))
         return recipes.filter((r): r is RecipeSearchResult => r !== null && r.name !== undefined)
       })()
 
