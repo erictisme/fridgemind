@@ -3,6 +3,12 @@
 import { useState, useRef, useCallback } from 'react'
 import RecipeSearchCard from './RecipeSearchCard'
 
+export interface RecipeRating {
+  value: number // 1-5 stars
+  count: number // number of ratings
+  reviewCount?: number
+}
+
 export interface RecipeSearchResult {
   name: string
   description: string
@@ -10,8 +16,14 @@ export interface RecipeSearchResult {
   source_type: 'website' | 'youtube' | 'blog'
   source_name: string
   image_url?: string
-  estimated_time_minutes?: number
+  prep_time_minutes?: number
+  cook_time_minutes?: number
+  total_time_minutes?: number
+  estimated_time_minutes?: number // Legacy
   ingredients_preview: string[]
+  rating?: RecipeRating // Real rating from source
+  author?: string
+  servings?: number
   confidence_score: number
 }
 

@@ -33,6 +33,33 @@ export default function RecipeSearchCard({
     window.open(result.source_url, '_blank', 'noopener,noreferrer')
   }
 
+  // Get time from either new or legacy field
+  const timeMinutes = result.total_time_minutes || result.estimated_time_minutes
+
+  // Format rating display
+  const renderRating = () => {
+    if (!result.rating || result.rating.value === 0) return null
+
+    const stars = Math.round(result.rating.value)
+    const reviewText = result.rating.count > 0
+      ? `(${result.rating.count.toLocaleString()})`
+      : ''
+
+    return (
+      <div className="flex items-center gap-1">
+        <div className="flex">
+          {[1, 2, 3, 4, 5].map(i => (
+            <span key={i} className={`text-xs ${i <= stars ? 'text-amber-400' : 'text-gray-300'}`}>
+              ★
+            </span>
+          ))}
+        </div>
+        <span className="text-xs text-gray-500">{result.rating.value.toFixed(1)}</span>
+        {reviewText && <span className="text-xs text-gray-400">{reviewText}</span>}
+      </div>
+    )
+  }
+
   return (
     <div className="flex-shrink-0 w-72 snap-start">
       <div className="bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all h-full flex flex-col">
@@ -65,9 +92,9 @@ export default function RecipeSearchCard({
             </div>
 
             {/* Time Badge */}
-            {result.estimated_time_minutes && (
+            {timeMinutes && (
               <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white rounded-full text-xs font-medium">
-                {formatTime(result.estimated_time_minutes)}
+                {formatTime(timeMinutes)}
               </div>
             )}
 
@@ -77,7 +104,7 @@ export default function RecipeSearchCard({
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
-                Tap to view recipe
+                View full recipe
               </span>
             </div>
           </div>
@@ -89,27 +116,35 @@ export default function RecipeSearchCard({
               {result.name}
             </h3>
 
+            {/* Rating */}
+            {renderRating()}
+
+            {/* Author */}
+            {result.author && (
+              <p className="text-xs text-gray-400 mt-1">by {result.author}</p>
+            )}
+
             {/* Description */}
-            {result.description && (
-              <p className="text-xs text-gray-500 line-clamp-2 mb-2">
+            {result.description && !result.rating && (
+              <p className="text-xs text-gray-500 line-clamp-2 mt-1">
                 {result.description}
               </p>
             )}
 
             {/* Ingredients Preview */}
             {result.ingredients_preview.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-2">
-                {result.ingredients_preview.slice(0, 4).map((ing, i) => (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {result.ingredients_preview.slice(0, 3).map((ing, i) => (
                   <span
                     key={i}
-                    className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] truncate max-w-16"
+                    className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] truncate max-w-20"
                   >
-                    {ing}
+                    {ing.replace(/^\d+[\s\/\d]*(?:cup|tbsp|tsp|oz|lb|g|kg|ml|l|piece|pieces|clove|cloves)?\s*/i, '').trim()}
                   </span>
                 ))}
-                {result.ingredients_preview.length > 4 && (
+                {result.ingredients_preview.length > 3 && (
                   <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[10px]">
-                    +{result.ingredients_preview.length - 4}
+                    +{result.ingredients_preview.length - 3}
                   </span>
                 )}
               </div>

@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!)
 
 interface SearchRequestBody {
   query: string
   ingredients?: string[]
   limit?: number
+}
+
+interface RecipeRating {
+  value: number // 1-5 stars
+  count: number // number of ratings
+  reviewCount?: number // number of reviews
 }
 
 interface RecipeSearchResult {
@@ -17,28 +20,30 @@ interface RecipeSearchResult {
   source_type: 'website' | 'youtube' | 'blog'
   source_name: string
   image_url?: string
-  estimated_time_minutes?: number
+  prep_time_minutes?: number
+  cook_time_minutes?: number
+  total_time_minutes?: number
   ingredients_preview: string[]
+  rating?: RecipeRating // Real rating from the source
+  author?: string
+  servings?: number
   confidence_score: number
 }
 
-// Known recipe websites for scoring
+// Trusted recipe sites - these typically have good schema.org markup
 const TRUSTED_RECIPE_SITES = [
-  'allrecipes.com',
-  'foodnetwork.com',
-  'bonappetit.com',
-  'seriouseats.com',
-  'epicurious.com',
-  'delish.com',
-  'tasty.co',
-  'simplyrecipes.com',
-  'budgetbytes.com',
-  'recipetineats.com',
-  'cookieandkate.com',
-  'minimalistbaker.com',
-  'smittenkitchen.com',
-  'thekitchn.com',
-  'food52.com',
+  { domain: 'allrecipes.com', name: 'Allrecipes', searchUrl: 'https://www.allrecipes.com/search?q=' },
+  { domain: 'seriouseats.com', name: 'Serious Eats', searchUrl: 'https://www.seriouseats.com/search?q=' },
+  { domain: 'bonappetit.com', name: 'Bon Appétit', searchUrl: 'https://www.bonappetit.com/search?q=' },
+  { domain: 'epicurious.com', name: 'Epicurious', searchUrl: 'https://www.epicurious.com/search/' },
+  { domain: 'delish.com', name: 'Delish', searchUrl: 'https://www.delish.com/search/?q=' },
+  { domain: 'simplyrecipes.com', name: 'Simply Recipes', searchUrl: 'https://www.simplyrecipes.com/?s=' },
+  { domain: 'budgetbytes.com', name: 'Budget Bytes', searchUrl: 'https://www.budgetbytes.com/?s=' },
+  { domain: 'recipetineats.com', name: 'RecipeTin Eats', searchUrl: 'https://www.recipetineats.com/?s=' },
+  { domain: 'food.com', name: 'Food.com', searchUrl: 'https://www.food.com/search/' },
+  { domain: 'foodnetwork.com', name: 'Food Network', searchUrl: 'https://www.foodnetwork.com/search/' },
+  { domain: 'tasty.co', name: 'Tasty', searchUrl: 'https://tasty.co/search?q=' },
+  { domain: 'thekitchn.com', name: 'The Kitchn', searchUrl: 'https://www.thekitchn.com/search?q=' },
 ]
 
 // Extract domain from URL
@@ -51,51 +56,160 @@ function extractDomain(url: string): string {
   }
 }
 
-// Score a recipe result based on source quality
-function scoreRecipeSource(url: string, hasIngredients: boolean, hasInstructions: boolean): number {
-  let score = 0
-  const domain = extractDomain(url)
+// Parse ISO 8601 duration to minutes (PT30M, PT1H30M, etc.)
+function parseDuration(duration: string | undefined): number | undefined {
+  if (!duration) return undefined
 
-  // Trusted recipe site bonus
-  if (TRUSTED_RECIPE_SITES.some(site => domain.includes(site))) {
-    score += 25
-  }
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
+  if (!match) return undefined
 
-  // YouTube video bonus (often has good visuals)
-  if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    score += 15
-  }
-
-  // Has ingredients
-  if (hasIngredients) {
-    score += 30
-  }
-
-  // Has instructions
-  if (hasInstructions) {
-    score += 30
-  }
-
-  return score
+  const hours = parseInt(match[1] || '0')
+  const minutes = parseInt(match[2] || '0')
+  return hours * 60 + minutes
 }
 
-// Fetch and extract recipe data from a URL using Gemini
-async function extractRecipeFromUrl(url: string): Promise<{
-  name: string
-  description: string
-  ingredients: string[]
-  hasInstructions: boolean
-  estimatedTime?: number
-  imageUrl?: string
-} | null> {
+// Extract recipe data from schema.org JSON-LD
+function extractRecipeSchema(html: string): {
+  name?: string
+  description?: string
+  image?: string
+  prepTime?: number
+  cookTime?: number
+  totalTime?: number
+  ingredients?: string[]
+  rating?: RecipeRating
+  author?: string
+  servings?: number
+} | null {
   try {
-    // Fetch the page content
+    // Find JSON-LD script tags
+    const jsonLdMatches = html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)
+
+    for (const match of jsonLdMatches) {
+      try {
+        const jsonContent = match[1].trim()
+        const data = JSON.parse(jsonContent)
+
+        // Handle both single object and @graph array format
+        const items = data['@graph'] || (Array.isArray(data) ? data : [data])
+
+        for (const item of items) {
+          if (item['@type'] === 'Recipe' ||
+              (Array.isArray(item['@type']) && item['@type'].includes('Recipe'))) {
+
+            // Extract ingredients
+            let ingredients: string[] = []
+            if (item.recipeIngredient) {
+              ingredients = Array.isArray(item.recipeIngredient)
+                ? item.recipeIngredient.slice(0, 8)
+                : [item.recipeIngredient]
+            }
+
+            // Extract rating
+            let rating: RecipeRating | undefined
+            if (item.aggregateRating) {
+              const r = item.aggregateRating
+              rating = {
+                value: parseFloat(r.ratingValue) || 0,
+                count: parseInt(r.ratingCount) || parseInt(r.reviewCount) || 0,
+                reviewCount: parseInt(r.reviewCount),
+              }
+            }
+
+            // Extract image
+            let image: string | undefined
+            if (item.image) {
+              if (typeof item.image === 'string') {
+                image = item.image
+              } else if (Array.isArray(item.image)) {
+                image = item.image[0]
+              } else if (item.image.url) {
+                image = item.image.url
+              }
+            }
+
+            // Extract author
+            let author: string | undefined
+            if (item.author) {
+              if (typeof item.author === 'string') {
+                author = item.author
+              } else if (item.author.name) {
+                author = item.author.name
+              } else if (Array.isArray(item.author) && item.author[0]?.name) {
+                author = item.author[0].name
+              }
+            }
+
+            // Extract servings
+            let servings: number | undefined
+            if (item.recipeYield) {
+              const yieldStr = Array.isArray(item.recipeYield) ? item.recipeYield[0] : item.recipeYield
+              const servingsMatch = String(yieldStr).match(/(\d+)/)
+              if (servingsMatch) {
+                servings = parseInt(servingsMatch[1])
+              }
+            }
+
+            return {
+              name: item.name,
+              description: item.description,
+              image,
+              prepTime: parseDuration(item.prepTime),
+              cookTime: parseDuration(item.cookTime),
+              totalTime: parseDuration(item.totalTime),
+              ingredients,
+              rating,
+              author,
+              servings,
+            }
+          }
+        }
+      } catch (e) {
+        // Continue to next JSON-LD block
+        continue
+      }
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+// Fallback: Extract basic info from HTML meta tags
+function extractMetaTags(html: string): {
+  title?: string
+  description?: string
+  image?: string
+} {
+  const titleMatch = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]*)"/) ||
+                     html.match(/<title>([^<]*)<\/title>/)
+  const descMatch = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]*)"/) ||
+                    html.match(/<meta[^>]*name="description"[^>]*content="([^"]*)"/)
+  const imageMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/)
+
+  return {
+    title: titleMatch?.[1],
+    description: descMatch?.[1],
+    image: imageMatch?.[1],
+  }
+}
+
+// Fetch and extract recipe from a URL
+async function fetchRecipeFromUrl(url: string): Promise<RecipeSearchResult | null> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0; Recipe Search)',
+        'Accept': 'text/html',
       },
-      signal: AbortSignal.timeout(5000), // 5 second timeout
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       return null
@@ -103,133 +217,123 @@ async function extractRecipeFromUrl(url: string): Promise<{
 
     const html = await response.text()
 
-    // Basic HTML cleaning
-    const cleanedHtml = html
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .slice(0, 15000) // Limit content size
+    // Try to extract schema.org recipe data first
+    const schemaData = extractRecipeSchema(html)
 
-    // Extract image from meta tags
-    const ogImageMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/)
-    const imageUrl = ogImageMatch ? ogImageMatch[1] : undefined
+    if (schemaData?.name) {
+      const domain = extractDomain(url)
+      const trustedSite = TRUSTED_RECIPE_SITES.find(s => domain.includes(s.domain))
 
-    // Use Gemini to extract recipe info
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+      // Calculate confidence score
+      let confidence = 50
+      if (trustedSite) confidence += 20
+      if (schemaData.rating && schemaData.rating.count > 10) confidence += 15
+      if (schemaData.ingredients && schemaData.ingredients.length > 3) confidence += 10
+      if (schemaData.totalTime) confidence += 5
 
-    const prompt = `Extract recipe information from this webpage content. Return ONLY valid JSON:
-
-{
-  "is_recipe": true/false,
-  "name": "Recipe name",
-  "description": "Brief 1-sentence description",
-  "ingredients": ["ingredient 1", "ingredient 2", ...] (just names, max 8 items),
-  "has_instructions": true/false,
-  "estimated_time_minutes": number or null
-}
-
-Webpage content:
-"""
-${cleanedHtml}
-"""`
-
-    const result = await model.generateContent(prompt)
-    const responseText = result.response.text()
-
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
-
-    const parsed = JSON.parse(jsonMatch[0])
-
-    if (!parsed.is_recipe) return null
-
-    return {
-      name: parsed.name || 'Untitled Recipe',
-      description: parsed.description || '',
-      ingredients: (parsed.ingredients || []).slice(0, 8),
-      hasInstructions: parsed.has_instructions || false,
-      estimatedTime: parsed.estimated_time_minutes,
-      imageUrl,
+      return {
+        name: schemaData.name,
+        description: schemaData.description || '',
+        source_url: url,
+        source_type: url.includes('youtube.com') ? 'youtube' : 'website',
+        source_name: trustedSite?.name || domain,
+        image_url: schemaData.image,
+        prep_time_minutes: schemaData.prepTime,
+        cook_time_minutes: schemaData.cookTime,
+        total_time_minutes: schemaData.totalTime,
+        ingredients_preview: schemaData.ingredients || [],
+        rating: schemaData.rating,
+        author: schemaData.author,
+        servings: schemaData.servings,
+        confidence_score: confidence,
+      }
     }
+
+    // Fallback to meta tags
+    const metaData = extractMetaTags(html)
+    if (metaData.title) {
+      const domain = extractDomain(url)
+      const trustedSite = TRUSTED_RECIPE_SITES.find(s => domain.includes(s.domain))
+
+      return {
+        name: metaData.title,
+        description: metaData.description || '',
+        source_url: url,
+        source_type: 'website',
+        source_name: trustedSite?.name || domain,
+        image_url: metaData.image,
+        ingredients_preview: [],
+        confidence_score: 30, // Lower confidence for meta-only
+      }
+    }
+
+    return null
   } catch (error) {
-    console.error('Failed to extract recipe from URL:', url, error)
+    console.error('Failed to fetch recipe from URL:', url, error)
     return null
   }
 }
 
-// Generate recipe suggestions directly with Gemini
-async function generateRecipeSuggestions(query: string, limit: number = 5): Promise<RecipeSearchResult[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-
-  const prompt = `You are a recipe expert. Generate ${limit} real, authentic recipes for this search query: "${query}"
-
-These should be REAL recipes that exist - popular, well-known dishes. Include a mix of:
-- Classic recipes (e.g., from famous cookbooks, traditional cuisines)
-- Popular restaurant-style dishes
-- Home cooking favorites
-
-For each recipe, provide:
-1. Exact recipe name (use the actual common name)
-2. Brief 1-sentence description
-3. Estimated cooking time in minutes
-4. 4-6 main ingredients (just names, no quantities)
-5. Source type: "website" for blog recipes, "youtube" for video recipes, "blog" for personal blogs
-6. Source name: A realistic website/channel name (e.g., "Serious Eats", "Joshua Weissman", "RecipeTin Eats")
-7. A realistic URL where this recipe might be found (must be a REAL, working URL from a known recipe site)
-
-IMPORTANT: Use REAL URLs from these trusted sites:
-- https://www.seriouseats.com/
-- https://www.allrecipes.com/
-- https://www.bonappetit.com/
-- https://www.delish.com/
-- https://www.budgetbytes.com/
-- https://www.simplyrecipes.com/
-- https://www.recipetineats.com/
-- https://www.youtube.com/@joshuaweissman
-- https://www.youtube.com/@BingingwithBabish
-
-Return ONLY valid JSON array:
-[
-  {
-    "name": "Recipe Name",
-    "description": "Brief description",
-    "source_url": "https://real-url.com/recipe",
-    "source_type": "website",
-    "source_name": "Site Name",
-    "estimated_time_minutes": 30,
-    "ingredients_preview": ["ingredient1", "ingredient2", "ingredient3", "ingredient4"]
-  }
-]`
-
+// Search a specific recipe site for recipes
+async function searchRecipeSite(
+  site: typeof TRUSTED_RECIPE_SITES[0],
+  query: string
+): Promise<string[]> {
   try {
-    const result = await model.generateContent(prompt)
-    const responseText = result.response.text()
+    const searchUrl = site.searchUrl + encodeURIComponent(query)
 
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-    if (!jsonMatch) return []
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
 
-    const recipes = JSON.parse(jsonMatch[0])
-    return recipes.map((r: {
-      name: string
-      description: string
-      source_url: string
-      source_type: 'website' | 'youtube' | 'blog'
-      source_name: string
-      estimated_time_minutes?: number
-      ingredients_preview: string[]
-    }) => ({
-      name: r.name,
-      description: r.description,
-      source_url: r.source_url,
-      source_type: r.source_type || 'website',
-      source_name: r.source_name,
-      estimated_time_minutes: r.estimated_time_minutes,
-      ingredients_preview: r.ingredients_preview || [],
-      confidence_score: scoreRecipeSource(r.source_url, r.ingredients_preview?.length > 0, true),
-    }))
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0; Recipe Search)',
+        'Accept': 'text/html',
+      },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) return []
+
+    const html = await response.text()
+
+    // Extract recipe URLs from search results
+    // Look for links that look like recipe pages
+    const urlPattern = new RegExp(
+      `https?://(?:www\\.)?${site.domain.replace('.', '\\.')}[^"'\\s]*(?:recipe|recipes)[^"'\\s]*`,
+      'gi'
+    )
+
+    const matches: string[] = html.match(urlPattern) || []
+
+    // Also try common recipe URL patterns
+    const altPattern = new RegExp(
+      `href="(https?://(?:www\\.)?${site.domain.replace('.', '\\.')}[^"]*)"`,
+      'gi'
+    )
+
+    let altMatch
+    while ((altMatch = altPattern.exec(html)) !== null) {
+      const url = altMatch[1]
+      // Filter for likely recipe URLs (not category pages, etc.)
+      if (url.includes('/recipe') ||
+          url.match(/\/[\w-]+-\d+\/?$/) || // Allrecipes style: /recipe-name-12345/
+          url.match(/\/\d{4}\/\d{2}\//) || // Blog style: /2024/01/recipe-name
+          url.match(/\/[\w-]{20,}\/?$/)) { // Long slug likely recipe
+        matches.push(url)
+      }
+    }
+
+    // Deduplicate and limit
+    const uniqueUrls = [...new Set(matches)]
+      .filter(url => !url.includes('/search') && !url.includes('/category'))
+      .slice(0, 3)
+
+    return uniqueUrls
   } catch (error) {
-    console.error('Failed to generate recipe suggestions:', error)
+    console.error(`Failed to search ${site.name}:`, error)
     return []
   }
 }
@@ -244,41 +348,58 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json() as SearchRequestBody
-    const { query, ingredients, limit = 5 } = body
+    const { query, ingredients, limit = 6 } = body
 
     // Build search query
     let searchQuery = query || ''
     if (ingredients && ingredients.length > 0) {
-      const ingredientStr = ingredients.join(', ')
+      const ingredientStr = ingredients.join(' ')
       searchQuery = searchQuery
-        ? `${searchQuery} with ${ingredientStr}`
-        : `recipe using ${ingredientStr}`
+        ? `${searchQuery} ${ingredientStr}`
+        : ingredientStr
     }
 
     if (!searchQuery.trim()) {
       return NextResponse.json({ error: 'Please provide a search query or ingredients' }, { status: 400 })
     }
 
-    // Generate recipe suggestions directly
-    const results = await generateRecipeSuggestions(searchQuery, limit)
+    // Search multiple trusted recipe sites in parallel
+    // Pick 4 random sites to search (to balance speed vs coverage)
+    const shuffledSites = [...TRUSTED_RECIPE_SITES].sort(() => Math.random() - 0.5).slice(0, 4)
 
-    if (results.length === 0) {
+    const searchPromises = shuffledSites.map(site => searchRecipeSite(site, searchQuery))
+    const searchResults = await Promise.all(searchPromises)
+
+    // Flatten and deduplicate URLs
+    const allUrls = [...new Set(searchResults.flat())]
+
+    if (allUrls.length === 0) {
       return NextResponse.json({
         success: true,
         results: [],
-        message: 'No recipes found for this search. Try different keywords!',
+        message: 'No recipes found. Try different keywords or check your spelling.',
         query: searchQuery,
+        searched_sites: shuffledSites.map(s => s.name),
       })
     }
 
-    // Sort by confidence score
-    results.sort((a, b) => b.confidence_score - a.confidence_score)
+    // Fetch recipe details from each URL in parallel (limit to avoid overwhelming)
+    const urlsToFetch = allUrls.slice(0, Math.min(limit + 2, 10))
+    const recipePromises = urlsToFetch.map(url => fetchRecipeFromUrl(url))
+    const recipes = await Promise.all(recipePromises)
+
+    // Filter out nulls and sort by confidence
+    const validRecipes = recipes
+      .filter((r): r is RecipeSearchResult => r !== null && r.name !== undefined)
+      .sort((a, b) => b.confidence_score - a.confidence_score)
+      .slice(0, limit)
 
     return NextResponse.json({
       success: true,
-      results,
+      results: validRecipes,
       query: searchQuery,
-      total_found: results.length,
+      total_found: validRecipes.length,
+      searched_sites: shuffledSites.map(s => s.name),
     })
 
   } catch (error) {
