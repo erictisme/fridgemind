@@ -496,7 +496,7 @@ async function processYouTubeResults(
     console.warn('Failed to fetch YouTube stats:', e)
   }
 
-  return searchData.items.map(item => {
+  const results = searchData.items.map(item => {
     const videoId = item.id.videoId
     const stats = statsMap[videoId] || {}
     const thumbnail = item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url
@@ -531,6 +531,12 @@ async function processYouTubeResults(
       channel_name: item.snippet.channelTitle,
       author: item.snippet.channelTitle,
     }
+  })
+
+  // Filter out YouTube Shorts (videos under 2 minutes)
+  return results.filter(result => {
+    const minutes = result.total_time_minutes
+    return minutes === undefined || minutes >= 2
   })
 }
 

@@ -142,6 +142,8 @@ export default function RecipeDetailPage() {
     adjustedQuantity: number
     unit: string | null
     selected: boolean
+    inInventory?: boolean
+    inventoryQuantity?: number
   }>>([])
   const [confirmServings, setConfirmServings] = useState(1)
 
@@ -202,38 +204,65 @@ export default function RecipeDetailPage() {
     }
   }
 
-  // Open confirmation modal with calculated quantities
-  const handleMarkCooked = () => {
+  // Open confirmation modal with calculated quantities (only shows items in inventory)
+  const handleMarkCooked = async () => {
     if (!recipe) return
 
-    // Calculate quantities for each ingredient based on servings
-    const servingsMultiplier = (recipe.servings || 1) / (recipe.servings || 1) // Default to 1x
-    const ingredientsData = recipe.ingredients
-      .filter(ing => !ing.optional) // Exclude optional ingredients
-      .map(ing => {
-        let quantity = 1 // Default
-        const qty = ing.quantity
-        if (typeof qty === 'number') {
-          quantity = qty * servingsMultiplier
-        } else if (typeof qty === 'string') {
-          const parsed = parseFloat(qty)
-          if (!isNaN(parsed)) {
-            quantity = parsed * servingsMultiplier
+    setCooking(true) // Show loading state
+
+    try {
+      // Fetch user's inventory to match against
+      const inventoryRes = await fetch('/api/inventory')
+      const inventoryData = await inventoryRes.json()
+      const inventoryItems = inventoryData.items || []
+
+      // Calculate quantities for each ingredient and check if in inventory
+      const servingsMultiplier = (recipe.servings || 1) / (recipe.servings || 1) // Default to 1x
+      const ingredientsData = recipe.ingredients
+        .filter(ing => !ing.optional) // Exclude optional ingredients
+        .map(ing => {
+          let quantity = 1 // Default
+          const qty = ing.quantity
+          if (typeof qty === 'number') {
+            quantity = qty * servingsMultiplier
+          } else if (typeof qty === 'string') {
+            const parsed = parseFloat(qty)
+            if (!isNaN(parsed)) {
+              quantity = parsed * servingsMultiplier
+            }
           }
-        }
 
-        return {
-          name: ing.name,
-          originalQuantity: quantity,
-          adjustedQuantity: quantity,
-          unit: ing.unit || null,
-          selected: true, // All selected by default
-        }
-      })
+          // Check if ingredient exists in inventory (fuzzy match)
+          const ingName = ing.name.toLowerCase()
+          const matchedItem = inventoryItems.find((item: { name: string; quantity: number }) => {
+            const itemName = item.name.toLowerCase()
+            return itemName.includes(ingName) ||
+                   ingName.includes(itemName) ||
+                   itemName.includes(ingName.replace(/s$/, '')) ||
+                   ingName.includes(itemName.replace(/s$/, ''))
+          })
 
-    setConfirmIngredients(ingredientsData)
-    setConfirmServings(recipe.servings || 1)
-    setShowConfirmModal(true)
+          return {
+            name: ing.name,
+            originalQuantity: quantity,
+            adjustedQuantity: Math.min(quantity, matchedItem?.quantity || quantity),
+            unit: ing.unit || null,
+            selected: !!matchedItem, // Only select if in inventory
+            inInventory: !!matchedItem,
+            inventoryQuantity: matchedItem?.quantity || 0,
+          }
+        })
+        .filter(ing => ing.inInventory) // Only show items that exist in inventory
+
+      setConfirmIngredients(ingredientsData)
+      setConfirmServings(recipe.servings || 1)
+      setShowConfirmModal(true)
+    } catch (err) {
+      console.error('Failed to fetch inventory:', err)
+      setError('Failed to load inventory')
+    } finally {
+      setCooking(false)
+    }
   }
 
   // Actually execute the cooking after confirmation
@@ -519,8 +548,8 @@ export default function RecipeDetailPage() {
           >
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900 mb-1">Confirm Inventory Deduction</h2>
-              <p className="text-sm text-gray-600">Review and adjust quantities before deducting from inventory</p>
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Deduct from Inventory</h2>
+              <p className="text-sm text-gray-600">These ingredients match items in your inventory</p>
             </div>
 
             {/* Modal Body - Scrollable */}
@@ -569,14 +598,22 @@ export default function RecipeDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-900">Ingredients to Deduct</h3>
-                  <button
-                    onClick={toggleAllConfirmIngredients}
-                    className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                  >
-                    {confirmIngredients.every(ing => ing.selected) ? 'Deselect All' : 'Select All'}
-                  </button>
+                  {confirmIngredients.length > 0 && (
+                    <button
+                      onClick={toggleAllConfirmIngredients}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    >
+                      {confirmIngredients.every(ing => ing.selected) ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
                 </div>
 
+                {confirmIngredients.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No recipe ingredients found in your inventory.</p>
+                    <p className="text-xs mt-1">The recipe will still be marked as cooked.</p>
+                  </div>
+                ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {confirmIngredients.map((ing, index) => (
                     <div
@@ -627,21 +664,26 @@ export default function RecipeDetailPage() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
 
-              {/* Warning */}
-              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                <p className="text-xs text-amber-800">
-                  Note: The system will try to match these ingredients with items in your inventory. Only matching items will be deducted.
-                </p>
-              </div>
+              {/* Info */}
+              {confirmIngredients.length > 0 && (
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-xs text-blue-800">
+                    Only ingredients that match items in your inventory are shown above.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div className="p-6 border-t border-gray-200 bg-gray-50">
-              <div className="text-xs text-gray-500 mb-3 text-center">
-                {confirmIngredients.filter(ing => ing.selected).length} of {confirmIngredients.length} ingredients selected
-              </div>
+              {confirmIngredients.length > 0 && (
+                <div className="text-xs text-gray-500 mb-3 text-center">
+                  {confirmIngredients.filter(ing => ing.selected).length} of {confirmIngredients.length} ingredients selected
+                </div>
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowConfirmModal(false)}
@@ -651,10 +693,10 @@ export default function RecipeDetailPage() {
                 </button>
                 <button
                   onClick={executeMarkCooked}
-                  disabled={cooking || !confirmIngredients.some(ing => ing.selected)}
+                  disabled={cooking}
                   className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Confirm & Deduct
+                  {confirmIngredients.length === 0 ? 'Mark as Cooked' : 'Confirm & Deduct'}
                 </button>
               </div>
             </div>
