@@ -855,6 +855,113 @@ Do not include any text before or after the JSON.`
   }
 }
 
+// Extract recipe from cookbook photo
+export interface ExtractedRecipe {
+  name: string
+  description: string
+  servings: number
+  prep_time_minutes?: number
+  cook_time_minutes?: number
+  total_time_minutes?: number
+  ingredients: Array<{
+    name: string
+    quantity?: string | number
+    unit?: string
+    notes?: string
+  }>
+  instructions: string[]
+  cuisine_type?: string
+  tags?: string[]
+  source_notes?: string
+  confidence: number
+}
+
+const COOKBOOK_RECIPE_PROMPT = `You are a recipe extraction expert. Extract the complete recipe from this cookbook/recipe page photo.
+
+Extract ALL visible information including:
+1. Recipe name (title)
+2. Description/intro paragraph if visible
+3. Servings/yield
+4. Prep time, cook time, total time (if visible)
+5. ALL ingredients with quantities and units
+6. ALL instructions/steps in order
+7. Any tips, notes, or variations mentioned
+8. Cuisine type if determinable
+
+Be thorough - capture every ingredient and every step visible in the image.
+
+Return ONLY valid JSON:
+{
+  "name": "Recipe Title",
+  "description": "Brief description if visible, otherwise create a 1-sentence summary",
+  "servings": number (default to 4 if not visible),
+  "prep_time_minutes": number or null,
+  "cook_time_minutes": number or null,
+  "total_time_minutes": number or null,
+  "ingredients": [
+    {
+      "name": "ingredient name",
+      "quantity": "amount as string or number",
+      "unit": "cup/tbsp/etc or null",
+      "notes": "optional notes like 'chopped' or 'room temperature'"
+    }
+  ],
+  "instructions": ["Step 1 text", "Step 2 text", ...],
+  "cuisine_type": "italian/asian/mexican/etc or null",
+  "tags": ["quick", "vegetarian", etc.],
+  "source_notes": "Any attribution visible like 'from Martha Stewart' or cookbook title",
+  "confidence": 0.0-1.0 (how readable/clear the text was)
+}
+
+Do not include any text before or after the JSON.`
+
+export async function extractRecipeFromImage(imageBase64: string): Promise<ExtractedRecipe> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: base64Data,
+      },
+    },
+    COOKBOOK_RECIPE_PROMPT,
+  ])
+
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    return {
+      name: parsed.name || 'Untitled Recipe',
+      description: parsed.description || '',
+      servings: parsed.servings || 4,
+      prep_time_minutes: parsed.prep_time_minutes,
+      cook_time_minutes: parsed.cook_time_minutes,
+      total_time_minutes: parsed.total_time_minutes ||
+        ((parsed.prep_time_minutes || 0) + (parsed.cook_time_minutes || 0)) || null,
+      ingredients: parsed.ingredients || [],
+      instructions: parsed.instructions || [],
+      cuisine_type: parsed.cuisine_type,
+      tags: parsed.tags || [],
+      source_notes: parsed.source_notes,
+      confidence: parsed.confidence || 0.8,
+    }
+  } catch (err) {
+    console.error('Failed to parse cookbook recipe:', text, err)
+    throw new Error('Failed to extract recipe from image')
+  }
+}
+
 // Analyze nutrition from photo with user caption
 export async function analyzeNutritionWithCaption(
   imageBase64: string,

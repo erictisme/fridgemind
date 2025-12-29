@@ -14,7 +14,7 @@ interface RecipeIngredient {
 }
 
 interface ParsedRecipe {
-  is_recipe: boolean
+  is_recipe?: boolean
   name: string
   description: string | null
   ingredients: RecipeIngredient[]
@@ -23,7 +23,12 @@ interface ParsedRecipe {
   servings: number | null
   cuisine_type: string | null
   tags: string[]
-  confidence: number
+  confidence?: number
+  // Extended fields for cookbook/manual import
+  source_type?: string
+  source_url?: string | null
+  source_account?: string | null
+  image_url?: string | null
 }
 
 interface MealSuggestion {
@@ -960,15 +965,76 @@ export default function InspirePage() {
       {inputMode === 'none' && !previewRecipe && (
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add a Recipe</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button
               onClick={() => setInputMode('url')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
             >
               <span className="text-2xl mb-2 block">🔗</span>
               <span className="font-medium text-gray-900 text-sm">From URL</span>
-              <p className="text-xs text-gray-500 mt-1">Any recipe website, YouTube, Instagram</p>
+              <p className="text-xs text-gray-500 mt-1">Website, YouTube, Instagram</p>
             </button>
+            <label className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left cursor-pointer">
+              <span className="text-2xl mb-2 block">📷</span>
+              <span className="font-medium text-gray-900 text-sm">Snap Cookbook</span>
+              <p className="text-xs text-gray-500 mt-1">Photo of recipe page</p>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+
+                  const base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () => resolve(reader.result as string)
+                    reader.onerror = reject
+                    reader.readAsDataURL(file)
+                  })
+
+                  // Set loading state
+                  setParsing(true)
+                  setError(null)
+
+                  try {
+                    const res = await fetch('/api/recipes/parse-image', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ file_data: base64 }),
+                    })
+
+                    const data = await res.json()
+
+                    if (res.ok && data.recipe) {
+                      // Create preview recipe from extracted data
+                      setPreviewRecipe({
+                        name: data.recipe.name,
+                        description: data.recipe.description || '',
+                        source_type: 'manual',
+                        source_url: null,
+                        source_account: data.recipe.source_notes || 'Cookbook photo',
+                        image_url: null,
+                        ingredients: data.recipe.ingredients,
+                        instructions: data.recipe.instructions?.join('\n\n') || '',
+                        estimated_time_minutes: data.recipe.total_time_minutes,
+                        servings: data.recipe.servings || 4,
+                        cuisine_type: data.recipe.cuisine_type,
+                        tags: data.recipe.tags || [],
+                      })
+                    } else {
+                      setError(data.error || 'Could not extract recipe from image')
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to parse image')
+                  } finally {
+                    setParsing(false)
+                    e.target.value = '' // Reset input
+                  }
+                }}
+                className="hidden"
+              />
+            </label>
             <button
               onClick={() => setInputMode('text')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
@@ -986,6 +1052,17 @@ export default function InspirePage() {
               <p className="text-xs text-gray-500 mt-1">Multiple from one page</p>
             </button>
           </div>
+          {parsing && (
+            <div className="mt-4 flex items-center gap-2 text-purple-600">
+              <div className="w-5 h-5 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+              <span className="text-sm">Extracting recipe from photo...</span>
+            </div>
+          )}
+          {error && inputMode === 'none' && (
+            <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
         </div>
       )}
 
