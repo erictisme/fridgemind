@@ -573,71 +573,73 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
-          <p className="text-gray-500">{items.length} items</p>
+    <div className="space-y-3 pb-20">
+      {/* Mobile-optimized Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Inventory</h1>
+          <p className="text-sm text-gray-500">{items.length} items</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        {/* Action buttons - 2x2 grid on mobile */}
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:gap-2">
           <button
             onClick={() => setShowAddForm(true)}
-            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 font-medium text-xs sm:text-sm"
           >
             + Add
           </button>
           <button
             onClick={() => setShowPasteModal(true)}
-            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 font-medium text-xs sm:text-sm"
           >
             📋 Paste
           </button>
           <Link
             href="/dashboard/groceries?tab=upload"
-            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 font-medium text-xs sm:text-sm text-center"
           >
             🧾 Receipt
           </Link>
           <Link
             href="/dashboard/scan"
-            className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 active:bg-emerald-800 text-xs sm:text-sm text-center"
           >
             📸 Scan
           </Link>
         </div>
       </div>
 
-      {/* Freshness Legend */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setShowLegend(!showLegend)}
-          className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
-        >
-          <span className="text-lg">🚦</span>
-          {showLegend ? 'Hide legend' : 'Freshness guide'}
-        </button>
-        {showLegend && (
-          <div className="flex gap-3 text-xs">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-              Fresh (5+d)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-orange-500"></span>
-              Use soon (3-5d)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-red-600"></span>
-              Expiring (1-2d)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-gray-800"></span>
-              Expired
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Freshness Legend - Collapsible */}
+      <button
+        onClick={() => setShowLegend(!showLegend)}
+        className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+      >
+        <span>🚦</span>
+        <span>{showLegend ? 'Hide' : 'Freshness guide'}</span>
+        <svg className={`w-3 h-3 transition-transform ${showLegend ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {showLegend && (
+        <div className="flex flex-wrap gap-2 text-xs bg-gray-50 p-2 rounded-lg">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Fresh (5+d)
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+            Soon (3-5d)
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-600"></span>
+            Expiring (1-2d)
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-gray-800"></span>
+            Expired
+          </span>
+        </div>
+      )}
 
       {/* Add Item Form */}
       {showAddForm && (
@@ -770,219 +772,209 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Location filter tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      {/* Location filter tabs - horizontal scroll on mobile */}
+      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-gray-200 -mx-1 px-1">
         {(['all', 'fridge', 'freezer', 'pantry'] as const).map(loc => (
           <button
             key={loc}
             onClick={() => setLocationFilter(loc)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               locationFilter === loc
                 ? 'border-emerald-600 text-emerald-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {loc === 'all' ? 'All' : loc.charAt(0).toUpperCase() + loc.slice(1)}
-            <span className="ml-1 text-gray-400">({locationCounts[loc]})</span>
+            <span className="ml-1 text-xs text-gray-400">({locationCounts[loc]})</span>
           </button>
         ))}
       </div>
 
-      {/* Items grid */}
+      {/* Items List - Mobile-first simple list */}
       {sortedItems.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-4xl mb-3">🧊</div>
           <p className="text-gray-500 mb-4">No items yet</p>
           <button
             onClick={() => setShowAddForm(true)}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 active:bg-emerald-800"
           >
             Add your first item
           </button>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
           {sortedItems.map(item => {
             const status = getFreshnessStatus(item.expiry_date)
             const emoji = getFoodEmoji(item.name, item.nutritional_type)
             const isExpanded = expandedId === item.id
 
             return (
-              <div
-                key={item.id}
-                className={`rounded-xl border-2 transition-all ${status.cardBg} ${status.cardBorder} ${
-                  isExpanded ? 'ring-2 ring-emerald-500' : 'hover:shadow-md cursor-pointer'
-                }`}
-              >
-                {/* Card header */}
-                <div onClick={() => handleCardClick(item)} className="p-3 cursor-pointer">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xl flex-shrink-0">{emoji}</span>
-                      <h3 className="font-semibold text-gray-900 truncate">{item.name}</h3>
+              <div key={item.id} className={isExpanded ? 'bg-gray-50' : ''}>
+                {/* List item row */}
+                <div
+                  onClick={() => handleCardClick(item)}
+                  className={`flex items-center gap-3 px-3 py-3 cursor-pointer active:bg-gray-50 transition-colors ${
+                    status.days <= 0 ? 'opacity-60' : ''
+                  }`}
+                >
+                  {/* Freshness indicator dot */}
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    status.days <= 0 ? 'bg-gray-600' :
+                    status.days <= 2 ? 'bg-red-500' :
+                    status.days <= 5 ? 'bg-orange-500' : 'bg-emerald-500'
+                  }`} />
+
+                  {/* Emoji */}
+                  <span className="text-lg flex-shrink-0">{emoji}</span>
+
+                  {/* Name and details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <h3 className={`font-medium text-gray-900 truncate ${status.days <= 0 ? 'line-through' : ''}`}>
+                        {item.name}
+                      </h3>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {item.quantity}{item.unit && item.unit !== 'serving' ? ` ${item.unit}` : ''}
+                      </span>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-bold ${status.color} flex-shrink-0`}>
-                      {status.label}
-                    </span>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="capitalize">{item.location}</span>
+                      <span>•</span>
+                      <span>{new Date(item.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                    <span>{item.quantity} serving{item.quantity !== 1 ? 's' : ''}</span>
-                    <span className="text-gray-300">•</span>
-                    <span className="capitalize">{item.location}</span>
-                  </div>
+                  {/* Status badge */}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${status.color}`}>
+                    {status.label}
+                  </span>
 
-                  <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                    {item.purchase_date && (
-                      <p>Bought: {new Date(item.purchase_date).toLocaleDateString()}</p>
-                    )}
-                    <p>Expires: {new Date(item.expiry_date).toLocaleDateString()}</p>
-                  </div>
-
-                  {/* Expand hint */}
-                  <div className="mt-2 text-xs text-gray-400 flex items-center gap-1">
-                    <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                    {isExpanded ? 'Collapse' : 'Tap to edit'}
-                  </div>
+                  {/* Chevron */}
+                  <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
 
-                {/* Edit form */}
+                {/* Expanded edit form */}
                 {isExpanded && editingItem && (
-                  <div className="border-t border-gray-200 p-3 bg-white/80 space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
-                      <input
-                        type="text"
-                        value={editingItem.name}
-                        onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Servings</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={editingItem.quantity}
-                          onChange={(e) => setEditingItem({ ...editingItem, quantity: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-                        <select
-                          value={editingItem.nutritional_type}
-                          onChange={(e) => setEditingItem({ ...editingItem, nutritional_type: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        >
-                          {TYPES.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Purchase Date + Auto-estimate expiry */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        Purchase Date
-                        <span className="text-gray-400 font-normal ml-1">(auto-estimates expiry)</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={editingItem.purchase_date?.split('T')[0] || ''}
-                        onChange={(e) => handlePurchaseDateChange(e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                      />
-                    </div>
-
-                    {/* Expiry + Freshness row */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Expiry Date
-                          {estimatingExpiry && (
-                            <span className="ml-2 text-emerald-600 animate-pulse">estimating...</span>
-                          )}
-                        </label>
-                        <input
-                          type="date"
-                          value={editingItem.expiry_date?.split('T')[0] || ''}
-                          onChange={(e) => updateEditingItem('expiry_date', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Freshness</label>
-                        <select
-                          value={editingItem.freshness}
-                          onChange={(e) => updateEditingItem('freshness', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
-                        >
-                          {FRESHNESS_LEVELS.map(level => (
-                            <option key={level} value={level}>{level.replace('_', ' ')}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex gap-2 pt-1">
+                  <div className="px-3 pb-3 space-y-3 bg-gray-50 border-t border-gray-200">
+                    {/* Quick actions row */}
+                    <div className="flex gap-2 pt-3">
                       <button
-                        onClick={handleSave}
+                        onClick={() => handleRemove('consumed')}
                         disabled={saving}
-                        className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                        className="flex-1 px-3 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-50"
                       >
-                        {saving ? 'Saving...' : 'Save'}
+                        ✓ Ate it
                       </button>
                       <button
-                        onClick={() => setShowRemoveDialog(true)}
+                        onClick={() => handleRemove('wasted')}
                         disabled={saving}
-                        className="px-3 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-50"
+                        className="flex-1 px-3 py-2.5 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50"
                       >
-                        Remove
+                        🗑 Went bad
                       </button>
                       <button
-                        onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300"
+                        onClick={() => handleRemove('wrong_entry')}
+                        disabled={saving}
+                        className="px-3 py-2.5 bg-gray-400 text-white rounded-lg text-sm font-medium hover:bg-gray-500 active:bg-gray-600 disabled:opacity-50"
                       >
-                        ×
+                        ✗
                       </button>
                     </div>
 
-                    {/* Remove dialog */}
-                    {showRemoveDialog && (
-                      <div className="mt-2 p-3 bg-gray-100 rounded-lg">
-                        <p className="text-sm text-gray-700 mb-2">Why removing?</p>
-                        <div className="grid grid-cols-3 gap-2">
+                    {/* Edit fields - collapsible */}
+                    <details className="group">
+                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 list-none flex items-center gap-1">
+                        <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        Edit details
+                      </summary>
+
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                          <input
+                            type="text"
+                            value={editingItem.name}
+                            onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={editingItem.quantity}
+                              onChange={(e) => setEditingItem({ ...editingItem, quantity: parseFloat(e.target.value) || 0 })}
+                              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
+                            <select
+                              value={editingItem.location}
+                              onChange={(e) => setEditingItem({ ...editingItem, location: e.target.value })}
+                              className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                            >
+                              {LOCATIONS.map(loc => (
+                                <option key={loc} value={loc}>{loc.charAt(0).toUpperCase() + loc.slice(1)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Purchase Date
+                            <span className="text-gray-400 font-normal ml-1">(auto-estimates expiry)</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={editingItem.purchase_date?.split('T')[0] || ''}
+                            onChange={(e) => handlePurchaseDateChange(e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Expiry Date
+                            {estimatingExpiry && (
+                              <span className="ml-2 text-emerald-600 animate-pulse">estimating...</span>
+                            )}
+                          </label>
+                          <input
+                            type="date"
+                            value={editingItem.expiry_date?.split('T')[0] || ''}
+                            onChange={(e) => updateEditingItem('expiry_date', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm text-gray-900 bg-white"
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => handleRemove('consumed')}
+                            onClick={handleSave}
                             disabled={saving}
-                            className="px-2 py-2 bg-emerald-500 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 disabled:opacity-50"
+                            className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
                           >
-                            Ate it
+                            {saving ? 'Saving...' : 'Save Changes'}
                           </button>
                           <button
-                            onClick={() => handleRemove('wasted')}
-                            disabled={saving}
-                            className="px-2 py-2 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 disabled:opacity-50"
+                            onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
+                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 active:bg-gray-400"
                           >
-                            Went bad
-                          </button>
-                          <button
-                            onClick={() => handleRemove('wrong_entry')}
-                            disabled={saving}
-                            className="px-2 py-2 bg-gray-500 text-white rounded-lg text-xs font-medium hover:bg-gray-600 disabled:opacity-50"
-                          >
-                            Wrong
+                            Cancel
                           </button>
                         </div>
                       </div>
-                    )}
+                    </details>
                   </div>
                 )}
               </div>
