@@ -369,6 +369,45 @@ export default function InventoryPage() {
     }
   }
 
+  // "Still OK" - extend expiry by 3 days from today
+  const handleStillOk = async () => {
+    if (!editingItem) return
+
+    setSaving(true)
+
+    try {
+      // Calculate new expiry: today + 3 days
+      const today = new Date()
+      today.setDate(today.getDate() + 3)
+      const newExpiryDate = today.toISOString().split('T')[0]
+
+      const response = await fetch('/api/inventory', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editingItem,
+          expiry_date: newExpiryDate,
+          freshness: 'fresh',
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to update')
+
+      // Update local state
+      setItems(prev => prev.map(item =>
+        item.id === editingItem.id
+          ? { ...item, expiry_date: newExpiryDate, freshness: 'fresh' }
+          : item
+      ))
+      setExpandedId(null)
+      setEditingItem(null)
+    } catch {
+      setError('Failed to update item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Auto-update expiry when type or location changes in add form
   const updateNewItem = (field: string, value: string | number) => {
     const updated = { ...newItem, [field]: value }
@@ -887,10 +926,11 @@ export default function InventoryPage() {
                         Wrong entry
                       </button>
                       <button
-                        onClick={() => { setExpandedId(null); setEditingItem(null); setShowRemoveDialog(false) }}
-                        className="flex-1 px-3 py-2 bg-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-300 active:bg-gray-400"
+                        onClick={() => handleStillOk()}
+                        disabled={saving}
+                        className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 active:bg-blue-300 disabled:opacity-50"
                       >
-                        Still OK
+                        Still OK (+3d)
                       </button>
                     </div>
 
