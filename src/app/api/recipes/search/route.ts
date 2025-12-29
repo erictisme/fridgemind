@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// Decode HTML entities like &#39; -> '
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text
+  return text
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
 interface SourceToggles {
   web: boolean
   youtube: boolean
@@ -219,15 +233,15 @@ function extractRecipeSchema(html: string): {
             }
 
             return {
-              name: item.name,
-              description: item.description,
+              name: decodeHtmlEntities(item.name),
+              description: decodeHtmlEntities(item.description),
               image,
               prepTime: parseDuration(item.prepTime),
               cookTime: parseDuration(item.cookTime),
               totalTime: parseDuration(item.totalTime),
-              ingredients,
+              ingredients: ingredients.map(i => decodeHtmlEntities(i)),
               rating,
-              author,
+              author: author ? decodeHtmlEntities(author) : undefined,
               servings,
             }
           }
@@ -257,8 +271,8 @@ function extractMetaTags(html: string): {
   const imageMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/)
 
   return {
-    title: titleMatch?.[1],
-    description: descMatch?.[1],
+    title: decodeHtmlEntities(titleMatch?.[1] || ''),
+    description: decodeHtmlEntities(descMatch?.[1] || ''),
     image: imageMatch?.[1],
   }
 }
@@ -342,6 +356,111 @@ async function fetchRecipeFromUrl(url: string): Promise<RecipeSearchResult | nul
   }
 }
 
+// Fallback: Search directly on trusted recipe sites
+async function searchDirectOnSites(query: string, limit: number = 6): Promise<string[]> {
+  const relevantSites = getRelevantSites(query, 4)
+  const allUrls: string[] = []
+
+  // Extract key words from query for relevance matching
+  const queryWords = query.toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .filter(w => !['the', 'and', 'with', 'for', 'how', 'to', 'make', 'recipe'].includes(w))
+
+  // Search each site directly (in parallel)
+  const searchPromises = relevantSites.map(async (site) => {
+    try {
+      const searchUrl = `${site.searchUrl}${encodeURIComponent(query)}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+
+      if (!response.ok) return []
+
+      const html = await response.text()
+
+      // Extract recipe URLs from href attributes specifically
+      // Pattern: href="https://www.recipetineats.com/recipe-name/"
+      const hrefPattern = new RegExp(`href=["'](https?://(?:www\\.)?${site.domain.replace('.', '\\.')}[^"']+)["']`, 'gi')
+      const matches: string[] = []
+      let match
+      while ((match = hrefPattern.exec(html)) !== null) {
+        matches.push(match[1])
+      }
+
+      // Filter to actual recipe URLs (not search/category/tag pages)
+      return matches
+        .filter(url => {
+          // Clean URL - remove query params and fragments
+          const cleanUrl = url.split('?')[0].split('#')[0]
+          const path = cleanUrl.replace(/^https?:\/\/[^/]+/, '').toLowerCase()
+
+          // Must have a meaningful path (recipe slug with at least 15 chars)
+          if (path.length < 15) return false
+
+          // Exclude non-recipe pages by path patterns
+          const excludePatterns = [
+            '/search', '/category', '/tag/', '/author/', '/page/',
+            '/feed', '/wp-content', '/wp-admin', '/wp-json',
+            '/index', '/archive', '/browse', '/about', '/contact',
+            '/recipe-index', '/recipes-index', '/all-recipes',
+            '/tools', '/equipment', '/tips', '/how-to/',
+            '/privacy', '/terms', '/cookie', '/subscribe',
+            '.css', '.js', '.png', '.jpg', '.gif', '.svg', '.webp'
+          ]
+
+          if (excludePatterns.some(pattern => path.includes(pattern))) {
+            return false
+          }
+
+          // Recipe URLs should have a slug that looks like a recipe name
+          // Good: /vietnamese-chicken-salad/ or /recipe/chicken-soup/
+          // Bad: /recipes/ or /american-recipes/
+          const slug = path.split('/').filter(Boolean).pop() || ''
+
+          // Slug should be at least 10 chars and contain hyphens (recipe-name format)
+          if (slug.length < 10 || !slug.includes('-')) return false
+
+          // Exclude generic slugs
+          const genericSlugs = [
+            'recipes', 'recipe', 'index', 'archives', 'archive',
+            'all-recipes', 'recipe-index', 'browse-recipes',
+            'american-recipes', 'asian-recipes', 'quick-recipes',
+            'easy-recipes', 'healthy-recipes', 'dinner-recipes',
+            'lunch-recipes', 'breakfast-recipes', 'dessert-recipes'
+          ]
+          if (genericSlugs.includes(slug.replace(/\/$/, ''))) return false
+
+          // URL should contain at least one query word for relevance
+          const urlLower = cleanUrl.toLowerCase()
+          const hasQueryWord = queryWords.some(word => urlLower.includes(word))
+          if (!hasQueryWord) return false
+
+          return true
+        })
+        .map(url => url.split('?')[0].split('#')[0]) // Clean URL
+        .slice(0, 3) // Max 3 per site
+    } catch {
+      return []
+    }
+  })
+
+  const results = await Promise.all(searchPromises)
+  results.forEach(urls => allUrls.push(...urls))
+
+  const uniqueUrls = [...new Set(allUrls)].slice(0, limit)
+  console.log(`Direct site search found ${uniqueUrls.length} recipe URLs for "${query}"`)
+  return uniqueUrls
+}
+
 // Search for recipes using DuckDuckGo (no API key needed)
 async function searchWebForRecipes(query: string, limit: number = 6): Promise<string[]> {
   try {
@@ -366,7 +485,8 @@ async function searchWebForRecipes(query: string, limit: number = 6): Promise<st
 
     if (!response.ok) {
       console.error('DuckDuckGo search failed:', response.status)
-      return []
+      // Fallback to direct site search
+      return searchDirectOnSites(query, limit)
     }
 
     const html = await response.text()
@@ -408,10 +528,18 @@ async function searchWebForRecipes(query: string, limit: number = 6): Promise<st
       .slice(0, limit + 2)
 
     console.log(`DuckDuckGo found ${uniqueUrls.length} recipe URLs for "${query}"`)
+
+    // If DuckDuckGo returned 0 results, fallback to direct site search
+    if (uniqueUrls.length === 0) {
+      console.log('DuckDuckGo returned 0 results, falling back to direct site search')
+      return searchDirectOnSites(query, limit)
+    }
+
     return uniqueUrls
   } catch (error) {
     console.error('Web search error:', error)
-    return []
+    // Fallback to direct site search
+    return searchDirectOnSites(query, limit)
   }
 }
 
@@ -533,11 +661,22 @@ async function processYouTubeResults(
     }
   })
 
-  // Filter out YouTube Shorts (videos under 2 minutes)
-  return results.filter(result => {
+  // Filter out YouTube Shorts (under 2 min) and low-quality videos (under 10K views)
+  const filtered = results.filter(result => {
     const minutes = result.total_time_minutes
-    return minutes === undefined || minutes >= 2
+    const views = result.view_count || 0
+
+    // Must be at least 2 minutes (not a Short)
+    const isLongEnough = minutes === undefined || minutes >= 2
+
+    // Must have at least 10K views (quality threshold)
+    const hasEnoughViews = views >= 10000
+
+    return isLongEnough && hasEnoughViews
   })
+
+  // Sort by views (highest first) to prioritize quality
+  return filtered.sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
 }
 
 // Clean YouTube title (remove common suffixes)

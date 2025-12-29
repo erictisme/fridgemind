@@ -13,10 +13,13 @@ export interface ParsedRecipe {
   description: string | null
   ingredients: RecipeIngredient[]
   instructions: string | null
+  prep_time_minutes: number | null
+  cook_time_minutes: number | null
   estimated_time_minutes: number | null
   servings: number | null
   cuisine_type: string | null
   tags: string[]
+  notes: string | null
   confidence: number
 }
 
@@ -33,18 +36,25 @@ export interface InstagramExtractResult {
 // 1. Parse Raw Recipe Text
 // ============================================
 
-const PARSE_RECIPE_TEXT_PROMPT = `You are a recipe assistant. Parse the user's recipe text (which may be messy, copied from social media, or informal) into a structured recipe.
+const PARSE_RECIPE_TEXT_PROMPT = `You are a precise recipe assistant. Parse the recipe text into a structured format.
 
-Key principle: Recipes are GUIDES, not strict rules. Be flexible in interpretation.
+CRITICAL: Be EXACT with quantities. Copy them verbatim from the source.
+- "1/4 cup" must stay "1/4 cup" (NOT "1 cup")
+- "1/2 onion" must stay "1/2" (NOT "1")
+- "6 heaped cups" = quantity "6", unit "heaped cups"
+- NEVER round, approximate, or change quantities
 
 Rules:
-- Extract the recipe name (guess if not explicit)
-- Identify ingredients with quantities and units (be flexible - "some garlic" is fine)
-- Extract cooking instructions (keep them simple and conversational)
-- Estimate cooking time if not stated
-- Guess cuisine type if obvious
-- Add relevant tags (vegetarian, quick, one-pot, etc.)
-- If the text doesn't look like a recipe at all, set is_recipe: false
+- Extract the recipe name
+- Identify ALL ingredients with EXACT quantities from the source
+- Include preparation details in the ingredient name (e.g., "red onion, very finely sliced", "cucumber, deseeded, half moons")
+- Include "heaped", "tightly packed", "rounded" etc. in the unit
+- Extract cooking instructions with technique details
+- Extract prep time and cook time separately if available
+- Extract the exact servings stated (e.g., "3-4 servings" → use lower number: 3)
+- Identify cuisine type and add tags
+- Extract storage tips, notes, substitutions if present
+- If the text doesn't look like a recipe, set is_recipe: false
 
 Return ONLY valid JSON:
 {
@@ -52,15 +62,20 @@ Return ONLY valid JSON:
   "name": "Recipe Name",
   "description": "Brief description",
   "ingredients": [
-    { "name": "garlic", "quantity": "2", "unit": "cloves", "optional": false },
-    { "name": "olive oil", "quantity": "some", "unit": "", "optional": false }
+    { "name": "red onion, very finely sliced", "quantity": "1/2", "unit": "", "optional": false },
+    { "name": "cabbage, finely shredded (use top 2/3)", "quantity": "6", "unit": "heaped cups", "optional": false },
+    { "name": "mint leaves, tightly packed", "quantity": "1", "unit": "cup", "optional": false },
+    { "name": "fish sauce", "quantity": "1/4", "unit": "cup", "optional": false }
   ],
-  "instructions": "Step by step instructions as free text...",
-  "estimated_time_minutes": 30,
-  "servings": 2,
-  "cuisine_type": "italian",
-  "tags": ["quick", "vegetarian"],
-  "confidence": 0.85
+  "instructions": "Step by step instructions with technique details...",
+  "prep_time_minutes": 15,
+  "cook_time_minutes": 20,
+  "estimated_time_minutes": 35,
+  "servings": 3,
+  "cuisine_type": "vietnamese",
+  "tags": ["salad", "healthy"],
+  "notes": "Don't dress ahead. Can substitute X for Y.",
+  "confidence": 0.95
 }
 
 Do not include any text before or after the JSON.`
@@ -98,10 +113,13 @@ ${text}
         optional: ing.optional || false,
       })),
       instructions: parsed.instructions || null,
+      prep_time_minutes: typeof parsed.prep_time_minutes === 'number' ? parsed.prep_time_minutes : null,
+      cook_time_minutes: typeof parsed.cook_time_minutes === 'number' ? parsed.cook_time_minutes : null,
       estimated_time_minutes: typeof parsed.estimated_time_minutes === 'number' ? parsed.estimated_time_minutes : null,
       servings: typeof parsed.servings === 'number' ? parsed.servings : null,
       cuisine_type: parsed.cuisine_type || null,
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      notes: parsed.notes || null,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     }
   } catch (err) {
@@ -114,18 +132,21 @@ ${text}
 // 2. Extract Recipe from Instagram Caption + Image
 // ============================================
 
-const INSTAGRAM_RECIPE_PROMPT = `You are a recipe assistant analyzing an Instagram post. Extract a recipe from the caption (and image description if provided).
+const INSTAGRAM_RECIPE_PROMPT = `You are a precise recipe assistant analyzing an Instagram post. Extract a recipe from the caption.
 
-Key principle: Instagram recipes are often informal. Be flexible - "recipes are guides, not gods."
+CRITICAL: Be EXACT with quantities. Copy them verbatim.
+- "1/4 cup" must stay "1/4 cup" (NOT "1 cup")
+- "1/2 onion" must stay "1/2" (NOT "1")
+- NEVER round or approximate quantities
 
 Rules:
 - Determine if this post contains a recipe (cooking instructions + ingredients)
 - If it's just food photography without recipe, set is_recipe: false
-- Extract ingredients mentioned (may be scattered in caption)
+- Extract ALL ingredients with EXACT quantities
+- Include preparation details in ingredient names (e.g., "onion, diced")
 - Piece together cooking steps from the caption
-- Guess serving size and cooking time if not stated
+- Estimate serving size and cooking time if not stated
 - Identify cuisine type and add tags
-- Be generous - even a loose "throw these together" description counts as a recipe
 
 Return ONLY valid JSON:
 {
@@ -133,13 +154,16 @@ Return ONLY valid JSON:
   "name": "Recipe Name",
   "description": "Brief description",
   "ingredients": [
-    { "name": "ingredient", "quantity": "amount", "unit": "unit", "optional": false }
+    { "name": "ingredient, with prep details", "quantity": "1/4", "unit": "cup", "optional": false }
   ],
   "instructions": "Combined cooking instructions...",
+  "prep_time_minutes": 10,
+  "cook_time_minutes": 20,
   "estimated_time_minutes": 30,
   "servings": 2,
   "cuisine_type": "asian",
   "tags": ["quick", "healthy"],
+  "notes": null,
   "confidence": 0.8
 }
 
@@ -189,10 +213,13 @@ ${content}`
         optional: ing.optional || false,
       })),
       instructions: parsed.instructions || null,
+      prep_time_minutes: typeof parsed.prep_time_minutes === 'number' ? parsed.prep_time_minutes : null,
+      cook_time_minutes: typeof parsed.cook_time_minutes === 'number' ? parsed.cook_time_minutes : null,
       estimated_time_minutes: typeof parsed.estimated_time_minutes === 'number' ? parsed.estimated_time_minutes : null,
       servings: typeof parsed.servings === 'number' ? parsed.servings : null,
       cuisine_type: parsed.cuisine_type || null,
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      notes: parsed.notes || null,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     }
   } catch (err) {
@@ -205,19 +232,22 @@ ${content}`
 // 3. Extract Recipe from YouTube Video Description
 // ============================================
 
-const YOUTUBE_RECIPE_PROMPT = `You are a recipe assistant analyzing a YouTube video description. Extract a recipe from the video description text.
+const YOUTUBE_RECIPE_PROMPT = `You are a precise recipe assistant analyzing a YouTube video description. Extract a recipe from the video description text.
 
-Key principle: YouTube cooking videos often have recipes in the description with timestamps, affiliate links, and other content mixed in. Focus on extracting the actual recipe.
+CRITICAL: Be EXACT with quantities. Copy them verbatim.
+- "1/4 cup" must stay "1/4 cup" (NOT "1 cup")
+- "1/2 onion" must stay "1/2" (NOT "1")
+- NEVER round or approximate quantities
 
 Rules:
 - Determine if this description contains a recipe (ingredients + cooking instructions)
 - If it's just a video description without recipe details, set is_recipe: false
-- Extract ingredients (often listed with bullet points or numbers)
-- Extract cooking instructions (may be scattered or referenced)
+- Extract ALL ingredients with EXACT quantities
+- Include preparation details in ingredient names (e.g., "onion, finely diced")
+- Extract cooking instructions with technique details
 - Ignore: timestamps, affiliate links, subscribe buttons, sponsor mentions
-- Guess serving size and cooking time if not stated
+- Estimate serving size and cooking time if not stated
 - Identify cuisine type and add tags
-- Be thorough - video descriptions often have detailed recipes
 
 Return ONLY valid JSON:
 {
@@ -225,13 +255,16 @@ Return ONLY valid JSON:
   "name": "Recipe Name",
   "description": "Brief description",
   "ingredients": [
-    { "name": "ingredient", "quantity": "amount", "unit": "unit", "optional": false }
+    { "name": "ingredient, with prep details", "quantity": "1/4", "unit": "cup", "optional": false }
   ],
   "instructions": "Combined cooking instructions...",
+  "prep_time_minutes": 10,
+  "cook_time_minutes": 20,
   "estimated_time_minutes": 30,
   "servings": 2,
   "cuisine_type": "asian",
   "tags": ["quick", "healthy"],
+  "notes": null,
   "confidence": 0.8
 }
 
@@ -281,10 +314,13 @@ ${content}`
         optional: ing.optional || false,
       })),
       instructions: parsed.instructions || null,
+      prep_time_minutes: typeof parsed.prep_time_minutes === 'number' ? parsed.prep_time_minutes : null,
+      cook_time_minutes: typeof parsed.cook_time_minutes === 'number' ? parsed.cook_time_minutes : null,
       estimated_time_minutes: typeof parsed.estimated_time_minutes === 'number' ? parsed.estimated_time_minutes : null,
       servings: typeof parsed.servings === 'number' ? parsed.servings : null,
       cuisine_type: parsed.cuisine_type || null,
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      notes: parsed.notes || null,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     }
   } catch (err) {
@@ -332,17 +368,23 @@ export interface RecipeShoppingResult {
 // 4. Parse Multiple Recipes from Bulk Text/URL
 // ============================================
 
-const BULK_RECIPE_PARSE_PROMPT = `You are a recipe assistant. The user has provided text that may contain MULTIPLE recipes (from a recipe website, cookbook page, or collection).
+const BULK_RECIPE_PARSE_PROMPT = `You are a precise recipe assistant. The user has provided text that may contain MULTIPLE recipes.
+
+CRITICAL: Be EXACT with quantities. Copy them verbatim.
+- "1/4 cup" must stay "1/4 cup" (NOT "1 cup")
+- "1/2 onion" must stay "1/2" (NOT "1")
+- NEVER round or approximate quantities
 
 Your task: Extract ALL distinct recipes from the text.
 
 Rules:
 - Look for recipe patterns: titles followed by ingredients and instructions
 - Each recipe should have: name, ingredients list, instructions
+- Extract ALL ingredients with EXACT quantities
+- Include preparation details in ingredient names
 - Recipes may be separated by headers, blank lines, or ingredient categories
 - Be thorough - don't miss any recipes
-- If text is organized by ingredient (e.g., "Asparagus Recipes", "Avocado Recipes"), extract each individual recipe
-- Estimate cooking time if not stated
+- Extract cooking time if stated
 - Add relevant tags for each recipe
 
 Return ONLY valid JSON:
@@ -352,13 +394,16 @@ Return ONLY valid JSON:
       "name": "Recipe Name",
       "description": "Brief description",
       "ingredients": [
-        { "name": "ingredient", "quantity": "2", "unit": "cups", "optional": false }
+        { "name": "ingredient, with prep details", "quantity": "1/4", "unit": "cup", "optional": false }
       ],
       "instructions": "Step by step instructions...",
+      "prep_time_minutes": 10,
+      "cook_time_minutes": 20,
       "estimated_time_minutes": 30,
       "servings": 2,
       "cuisine_type": "italian",
-      "tags": ["quick", "vegetarian"]
+      "tags": ["quick", "vegetarian"],
+      "notes": null
     }
   ],
   "total_found": 5,
@@ -406,10 +451,13 @@ ${text.slice(0, 30000)}
         optional: ing.optional || false,
       })),
       instructions: recipe.instructions || null,
+      prep_time_minutes: typeof recipe.prep_time_minutes === 'number' ? recipe.prep_time_minutes : null,
+      cook_time_minutes: typeof recipe.cook_time_minutes === 'number' ? recipe.cook_time_minutes : null,
       estimated_time_minutes: typeof recipe.estimated_time_minutes === 'number' ? recipe.estimated_time_minutes : null,
       servings: typeof recipe.servings === 'number' ? recipe.servings : 2,
       cuisine_type: recipe.cuisine_type || null,
       tags: Array.isArray(recipe.tags) ? recipe.tags : [],
+      notes: recipe.notes || null,
       confidence: parsed.confidence || 0.7,
     }))
 

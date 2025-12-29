@@ -156,6 +156,11 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
       setSavedUrls(prev => new Set(prev).add(result.source_url))
     } catch (err) {
       console.error('Save error:', err)
+      // Show error to user
+      const errorMsg = result.source_type === 'youtube'
+        ? 'Could not save YouTube recipe. The video may not have a recipe in its description.'
+        : 'Failed to save recipe. Please try again.'
+      alert(errorMsg)
     } finally {
       setSavingUrl(null)
     }
