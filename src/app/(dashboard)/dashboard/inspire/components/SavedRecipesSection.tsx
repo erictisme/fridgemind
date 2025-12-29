@@ -167,14 +167,6 @@ export default function SavedRecipesSection({
         allTags={allTags}
       />
 
-      {/* Rediscover Section */}
-      {!hasActiveFilters && rediscoverRecipes.length > 0 && (
-        <RediscoverSection
-          recipes={rediscoverRecipes}
-          onRecipeClick={onRecipeClick}
-        />
-      )}
-
       {/* Filtered Results Info */}
       {hasActiveFilters && (
         <div className="flex items-center justify-between">
@@ -229,6 +221,14 @@ export default function SavedRecipesSection({
             />
           ))}
         </div>
+      )}
+
+      {/* Rediscover Section - Show after main recipe grid */}
+      {!hasActiveFilters && rediscoverRecipes.length > 0 && (
+        <RediscoverSection
+          recipes={rediscoverRecipes}
+          onRecipeClick={onRecipeClick}
+        />
       )}
     </div>
   )

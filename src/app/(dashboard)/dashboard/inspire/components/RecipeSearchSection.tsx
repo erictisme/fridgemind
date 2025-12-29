@@ -13,18 +13,34 @@ export interface RecipeSearchResult {
   name: string
   description: string
   source_url: string
-  source_type: 'website' | 'youtube' | 'blog'
+  source_type: 'website' | 'youtube' | 'instagram' | 'blog'
   source_name: string
   image_url?: string
+  thumbnail_url?: string // For YouTube
   prep_time_minutes?: number
   cook_time_minutes?: number
   total_time_minutes?: number
   estimated_time_minutes?: number // Legacy
+  video_duration?: string // For YouTube (e.g., "15:30")
   ingredients_preview: string[]
   rating?: RecipeRating // Real rating from source
   author?: string
   servings?: number
   confidence_score: number
+  // YouTube specific
+  view_count?: number
+  like_count?: number
+  channel_name?: string
+  // Instagram specific
+  likes?: number
+  comments?: number
+  account_handle?: string
+}
+
+interface SourceToggles {
+  web: boolean
+  youtube: boolean
+  instagram: boolean
 }
 
 interface RecipeSearchSectionProps {
@@ -46,11 +62,23 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
   const [error, setError] = useState<string | null>(null)
   const [savingUrl, setSavingUrl] = useState<string | null>(null)
   const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set())
+  const [sources, setSources] = useState<SourceToggles>({
+    web: true,
+    youtube: true,
+    instagram: false, // Off by default - requires more setup
+  })
+  const [searchedSources, setSearchedSources] = useState<string[]>([])
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const handleSearch = useCallback(async (searchQuery: string) => {
+  const handleSearch = useCallback(async (searchQuery: string, sourceToggles: SourceToggles = sources) => {
     if (!searchQuery.trim()) {
       setResults([])
+      return
+    }
+
+    // Check if any source is enabled
+    if (!sourceToggles.web && !sourceToggles.youtube && !sourceToggles.instagram) {
+      setError('Please select at least one source')
       return
     }
 
@@ -61,7 +89,11 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
       const response = await fetch('/api/recipes/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery, limit: 6 }),
+        body: JSON.stringify({
+          query: searchQuery,
+          limit: 8,
+          sources: sourceToggles,
+        }),
       })
 
       if (!response.ok) {
@@ -70,6 +102,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
 
       const data = await response.json()
       setResults(data.results || [])
+      setSearchedSources(data.searched_sources || [])
 
       if (data.results?.length === 0) {
         setError('No recipes found. Try different keywords!')
@@ -81,7 +114,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [sources])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -140,7 +173,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
       </div>
 
       {/* Search Form */}
-      <form onSubmit={handleSubmit} className="mb-4">
+      <form onSubmit={handleSubmit} className="mb-3">
         <div className="relative">
           <input
             type="text"
@@ -164,6 +197,58 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
           </button>
         </div>
       </form>
+
+      {/* Source Toggles */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <span className="text-xs text-gray-500 font-medium">Sources:</span>
+        <label className="flex items-center gap-1.5 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={sources.web}
+            onChange={(e) => {
+              const newSources = { ...sources, web: e.target.checked }
+              setSources(newSources)
+              if (query.trim()) handleSearch(query, newSources)
+            }}
+            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-sm text-gray-700 group-hover:text-indigo-600 flex items-center gap-1">
+            <span>🌐</span> Web
+          </span>
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={sources.youtube}
+            onChange={(e) => {
+              const newSources = { ...sources, youtube: e.target.checked }
+              setSources(newSources)
+              if (query.trim()) handleSearch(query, newSources)
+            }}
+            className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+          />
+          <span className="text-sm text-gray-700 group-hover:text-red-600 flex items-center gap-1">
+            <span>🎬</span> YouTube
+          </span>
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer group opacity-60" title="Coming soon">
+          <input
+            type="checkbox"
+            checked={sources.instagram}
+            onChange={(e) => {
+              const newSources = { ...sources, instagram: e.target.checked }
+              setSources(newSources)
+              if (query.trim()) handleSearch(query, newSources)
+            }}
+            disabled
+            className="w-4 h-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+          />
+          <span className="text-sm text-gray-700 flex items-center gap-1">
+            <span>📸</span> Instagram
+            <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded-full">Soon</span>
+          </span>
+        </label>
+      </div>
 
       {/* Quick Search Chips */}
       {results.length === 0 && !loading && (
@@ -209,7 +294,24 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
       {/* Results Carousel */}
       {results.length > 0 && !loading && (
         <div>
-          <p className="text-sm text-gray-500 mb-3">{results.length} recipes found</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-500">{results.length} recipes found</p>
+            {searchedSources.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span>from</span>
+                {searchedSources.includes('YouTube') && (
+                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-50 text-red-600 rounded">
+                    <span>▶️</span> YouTube
+                  </span>
+                )}
+                {searchedSources.some(s => !['YouTube', 'Instagram'].includes(s)) && (
+                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded">
+                    <span>🌐</span> Web
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2 snap-x snap-mandatory">
             {results.map((result, index) => (
               <RecipeSearchCard

@@ -134,6 +134,17 @@ export default function RecipeDetailPage() {
     not_found: string[]
   } | null>(null)
 
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmIngredients, setConfirmIngredients] = useState<Array<{
+    name: string
+    originalQuantity: number
+    adjustedQuantity: number
+    unit: string | null
+    selected: boolean
+  }>>([])
+  const [confirmServings, setConfirmServings] = useState(1)
+
   // Toggle ingredient selection
   const toggleIngredient = (index: number) => {
     setSelectedIngredients(prev => {
@@ -191,17 +202,62 @@ export default function RecipeDetailPage() {
     }
   }
 
-  const handleMarkCooked = async () => {
+  // Open confirmation modal with calculated quantities
+  const handleMarkCooked = () => {
+    if (!recipe) return
+
+    // Calculate quantities for each ingredient based on servings
+    const servingsMultiplier = (recipe.servings || 1) / (recipe.servings || 1) // Default to 1x
+    const ingredientsData = recipe.ingredients
+      .filter(ing => !ing.optional) // Exclude optional ingredients
+      .map(ing => {
+        let quantity = 1 // Default
+        const qty = ing.quantity
+        if (typeof qty === 'number') {
+          quantity = qty * servingsMultiplier
+        } else if (typeof qty === 'string') {
+          const parsed = parseFloat(qty)
+          if (!isNaN(parsed)) {
+            quantity = parsed * servingsMultiplier
+          }
+        }
+
+        return {
+          name: ing.name,
+          originalQuantity: quantity,
+          adjustedQuantity: quantity,
+          unit: ing.unit || null,
+          selected: true, // All selected by default
+        }
+      })
+
+    setConfirmIngredients(ingredientsData)
+    setConfirmServings(recipe.servings || 1)
+    setShowConfirmModal(true)
+  }
+
+  // Actually execute the cooking after confirmation
+  const executeMarkCooked = async () => {
     if (!recipe) return
 
     setCooking(true)
     setCookResult(null)
+    setShowConfirmModal(false)
 
     try {
+      // Send custom ingredients with adjusted quantities
       const response = await fetch(`/api/recipes/${recipe.id}/cook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ servings_cooked: recipe.servings || 1 }),
+        body: JSON.stringify({
+          servings_cooked: confirmServings,
+          custom_ingredients: confirmIngredients.map(ing => ({
+            name: ing.name,
+            adjustedQuantity: ing.adjustedQuantity,
+            unit: ing.unit,
+            selected: ing.selected,
+          })),
+        }),
       })
 
       const data = await response.json()
@@ -220,6 +276,28 @@ export default function RecipeDetailPage() {
     } finally {
       setCooking(false)
     }
+  }
+
+  // Toggle ingredient selection in confirm modal
+  const toggleConfirmIngredient = (index: number) => {
+    setConfirmIngredients(prev => prev.map((ing, i) =>
+      i === index ? { ...ing, selected: !ing.selected } : ing
+    ))
+  }
+
+  // Update ingredient quantity in confirm modal
+  const updateConfirmQuantity = (index: number, newQuantity: number) => {
+    // Round to 1 decimal place for cleaner display
+    const rounded = Math.round(newQuantity * 10) / 10
+    setConfirmIngredients(prev => prev.map((ing, i) =>
+      i === index ? { ...ing, adjustedQuantity: Math.max(0, rounded) } : ing
+    ))
+  }
+
+  // Select/deselect all ingredients in confirm modal
+  const toggleAllConfirmIngredients = () => {
+    const allSelected = confirmIngredients.every(ing => ing.selected)
+    setConfirmIngredients(prev => prev.map(ing => ({ ...ing, selected: !allSelected })))
   }
 
   if (loading) {
@@ -429,6 +507,161 @@ export default function RecipeDetailPage() {
 
   return (
     <div className="max-w-2xl mx-auto pb-20">
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setShowConfirmModal(false)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Confirm Inventory Deduction</h2>
+              <p className="text-sm text-gray-600">Review and adjust quantities before deducting from inventory</p>
+            </div>
+
+            {/* Modal Body - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Servings Adjustment */}
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Servings Cooked:</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const newServings = Math.max(1, confirmServings - 1)
+                        setConfirmServings(newServings)
+                        // Recalculate quantities
+                        const multiplier = newServings / (recipe?.servings || 1)
+                        setConfirmIngredients(prev => prev.map(ing => ({
+                          ...ing,
+                          adjustedQuantity: ing.originalQuantity * multiplier
+                        })))
+                      }}
+                      className="w-8 h-8 rounded-full bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
+                    >
+                      -
+                    </button>
+                    <span className="w-12 text-center font-bold text-gray-900">{confirmServings}</span>
+                    <button
+                      onClick={() => {
+                        const newServings = Math.min(20, confirmServings + 1)
+                        setConfirmServings(newServings)
+                        // Recalculate quantities
+                        const multiplier = newServings / (recipe?.servings || 1)
+                        setConfirmIngredients(prev => prev.map(ing => ({
+                          ...ing,
+                          adjustedQuantity: ing.originalQuantity * multiplier
+                        })))
+                      }}
+                      className="w-8 h-8 rounded-full bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ingredients List */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900">Ingredients to Deduct</h3>
+                  <button
+                    onClick={toggleAllConfirmIngredients}
+                    className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                  >
+                    {confirmIngredients.every(ing => ing.selected) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {confirmIngredients.map((ing, index) => (
+                    <div
+                      key={index}
+                      className={`p-3 rounded-lg border transition-colors ${
+                        ing.selected ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={ing.selected}
+                          onChange={() => toggleConfirmIngredient(index)}
+                          className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 mb-2">{ing.name}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => updateConfirmQuantity(index, ing.adjustedQuantity - 1)}
+                                disabled={!ing.selected}
+                                className="w-7 h-7 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm font-bold"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                value={Math.round(ing.adjustedQuantity * 10) / 10}
+                                onChange={(e) => updateConfirmQuantity(index, parseFloat(e.target.value) || 0)}
+                                disabled={!ing.selected}
+                                className="w-16 px-2 py-1 text-center border border-gray-300 rounded text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                step="0.1"
+                                min="0"
+                              />
+                              <button
+                                onClick={() => updateConfirmQuantity(index, ing.adjustedQuantity + 1)}
+                                disabled={!ing.selected}
+                                className="w-7 h-7 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm font-bold"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <span className="text-sm text-gray-600">{ing.unit || 'unit(s)'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Warning */}
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-xs text-amber-800">
+                  Note: The system will try to match these ingredients with items in your inventory. Only matching items will be deducted.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="text-xs text-gray-500 mb-3 text-center">
+                {confirmIngredients.filter(ing => ing.selected).length} of {confirmIngredients.length} ingredients selected
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex-1 px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeMarkCooked}
+                  disabled={cooking || !confirmIngredients.some(ing => ing.selected)}
+                  className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirm & Deduct
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back link */}
       <Link
         href="/dashboard/inspire"
@@ -827,7 +1060,7 @@ export default function RecipeDetailPage() {
             </button>
           </div>
           <p className="text-xs text-gray-400 mt-2 text-center">
-            Clicking &quot;I Made This&quot; will deduct ingredients from your inventory
+            Clicking &quot;I Made This&quot; will show a confirmation where you can review and adjust quantities
           </p>
         </div>
       </div>

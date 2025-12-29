@@ -23,7 +23,7 @@ export async function POST(
 
     const { id } = await params
     const body = await request.json()
-    const { servings_cooked = 1 } = body
+    const { servings_cooked = 1, custom_ingredients = null } = body
 
     // Get the recipe
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,13 +49,46 @@ export async function POST(
     const deductedItems: string[] = []
     const notFoundItems: string[] = []
 
+    // Determine which ingredients to process
+    let ingredientsToProcess: Array<{ name: string; quantity: number; unit?: string | null }> = []
+
+    if (custom_ingredients && Array.isArray(custom_ingredients)) {
+      // Use custom ingredients from the confirmation modal
+      ingredientsToProcess = custom_ingredients
+        .filter((ing: { selected: boolean; adjustedQuantity: number }) => ing.selected && ing.adjustedQuantity > 0)
+        .map((ing: { name: string; adjustedQuantity: number; unit?: string | null }) => ({
+          name: ing.name,
+          quantity: ing.adjustedQuantity,
+          unit: ing.unit,
+        }))
+    } else {
+      // Use recipe ingredients with servings multiplier (old behavior)
+      const recipeIngredients: RecipeIngredient[] = recipe.ingredients || []
+      const servingsMultiplier = servings_cooked / (recipe.servings || 1)
+
+      ingredientsToProcess = recipeIngredients
+        .filter(ing => !ing.optional)
+        .map(ing => {
+          let quantity = 1
+          const qty = ing.quantity
+          if (typeof qty === 'number') {
+            quantity = qty * servingsMultiplier
+          } else if (typeof qty === 'string') {
+            const parsed = parseFloat(qty)
+            if (!isNaN(parsed)) {
+              quantity = parsed * servingsMultiplier
+            }
+          }
+          return {
+            name: ing.name,
+            quantity,
+            unit: ing.unit,
+          }
+        })
+    }
+
     // Try to match and deduct each ingredient
-    const recipeIngredients: RecipeIngredient[] = recipe.ingredients || []
-    const servingsMultiplier = servings_cooked / (recipe.servings || 1)
-
-    for (const ingredient of recipeIngredients) {
-      if (ingredient.optional) continue // Skip optional ingredients
-
+    for (const ingredient of ingredientsToProcess) {
       const ingredientName = ingredient.name.toLowerCase()
 
       // Find matching inventory item (fuzzy match)
@@ -69,19 +102,7 @@ export async function POST(
       })
 
       if (matchingItem) {
-        // Calculate amount to deduct
-        let deductAmount = 1 // Default to 1 serving/unit
-
-        // Try to parse quantity from ingredient
-        const qty = ingredient.quantity
-        if (typeof qty === 'number') {
-          deductAmount = qty * servingsMultiplier
-        } else if (typeof qty === 'string') {
-          const parsed = parseFloat(qty)
-          if (!isNaN(parsed)) {
-            deductAmount = parsed * servingsMultiplier
-          }
-        }
+        const deductAmount = ingredient.quantity
 
         // Deduct from inventory (reduce quantity, delete if 0 or less)
         const newQuantity = Math.max(0, matchingItem.quantity - deductAmount)

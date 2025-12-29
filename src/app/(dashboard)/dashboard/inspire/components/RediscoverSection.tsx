@@ -14,7 +14,7 @@ export default function RediscoverSection({
   if (recipes.length === 0) return null
 
   const getTimeAgo = (recipe: SavedRecipe) => {
-    if (!recipe.last_cooked_at) return 'Never made'
+    if (!recipe.last_cooked_at) return 'New'
 
     const lastCooked = new Date(recipe.last_cooked_at)
     const days = Math.floor((Date.now() - lastCooked.getTime()) / (1000 * 60 * 60 * 24))
