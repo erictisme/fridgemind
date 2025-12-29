@@ -11,6 +11,9 @@ export interface DetectedItem {
   estimated_expiry_days: number
   confidence: number
   freshness: string
+  // Duplicate detection
+  possible_duplicate_of?: string  // Name of existing item it might match
+  is_new_item: boolean  // true = definitely new, false = might be duplicate
 }
 
 export interface VisionResponse {
@@ -53,12 +56,62 @@ Output format: Return ONLY a valid JSON object with this structure:
       "unit": "string",
       "estimated_expiry_days": number,
       "confidence": number,
-      "freshness": "string"
+      "freshness": "string",
+      "is_new_item": true
     }
   ]
 }
 
 Do not include any text before or after the JSON. Only return the JSON object.`
+
+// Vision prompt that cross-checks with existing inventory
+const VISION_WITH_INVENTORY_PROMPT = `You are a food inventory assistant. Analyze the provided image(s) and identify all visible food items.
+
+EXISTING INVENTORY (items user already has tracked):
+{EXISTING_ITEMS}
+
+YOUR TASK:
+1. Identify all visible food items in the image
+2. For EACH item, check if it might be the SAME item already in inventory (not a new purchase)
+3. Mark is_new_item=false if it looks like an existing item, and set possible_duplicate_of to the matching inventory item name
+
+DUPLICATE DETECTION RULES:
+- If you see "milk" and inventory has "Fresh Milk 2L", it's likely the SAME item → is_new_item: false, possible_duplicate_of: "Fresh Milk 2L"
+- If you see 3 apples and inventory has "Apple" with qty 3, likely the SAME → is_new_item: false
+- If you see something NOT in inventory at all, it's NEW → is_new_item: true, possible_duplicate_of: null
+- Be generous with matching - "Eggs" matches "Farm Fresh Eggs", "Chicken" matches "Chicken Breast"
+
+For each item provide:
+1. name: Be specific (e.g., "2% milk" not just "milk")
+2. storage_category: produce, dairy, protein, pantry, beverage, condiment, frozen
+3. nutritional_type: protein, carbs, fibre, misc
+4. quantity: Estimated number/amount
+5. unit: piece, pack, bottle, carton, bunch, bag, container, can, jar, etc.
+6. estimated_expiry_days: Days until typical expiry
+7. confidence: 0.0-1.0 score
+8. freshness: fresh, use_soon, expired
+9. is_new_item: true if NEW item not in inventory, false if likely same as existing
+10. possible_duplicate_of: Name of the existing inventory item it matches (or null if new)
+
+Output format: Return ONLY a valid JSON object:
+{
+  "items": [
+    {
+      "name": "string",
+      "storage_category": "string",
+      "nutritional_type": "string",
+      "quantity": number,
+      "unit": "string",
+      "estimated_expiry_days": number,
+      "confidence": number,
+      "freshness": "string",
+      "is_new_item": boolean,
+      "possible_duplicate_of": "string" | null
+    }
+  ]
+}
+
+Do not include any text before or after the JSON.`
 
 export async function analyzeImage(imageBase64: string): Promise<VisionResponse> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
@@ -635,7 +688,11 @@ export async function analyzeMultipleImages(imagesBase64: string[]): Promise<Vis
     }
 
     const parsed = JSON.parse(jsonMatch[0])
-    const items: DetectedItem[] = parsed.items || []
+    const items: DetectedItem[] = (parsed.items || []).map((item: Partial<DetectedItem>) => ({
+      ...item,
+      is_new_item: item.is_new_item ?? true,
+      possible_duplicate_of: item.possible_duplicate_of ?? null,
+    }))
 
     const highConfidence = items.filter(item => item.confidence >= 0.8).length
     const needsReview = items.filter(item => item.confidence < 0.8).length
@@ -646,6 +703,69 @@ export async function analyzeMultipleImages(imagesBase64: string[]): Promise<Vis
         total_detected: items.length,
         high_confidence: highConfidence,
         needs_review: needsReview,
+      },
+    }
+  } catch {
+    console.error('Failed to parse Gemini response:', text)
+    throw new Error('Failed to parse AI response')
+  }
+}
+
+// Analyze images with cross-check against existing inventory
+export async function analyzeImagesWithInventory(
+  imagesBase64: string[],
+  existingItems: Array<{ name: string; quantity: number }>
+): Promise<VisionResponse> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  // Build content array with all images
+  const content: Array<{ inlineData: { mimeType: string; data: string } } | string> = []
+
+  for (const imageBase64 of imagesBase64) {
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+    content.push({
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: base64Data,
+      },
+    })
+  }
+
+  // Format existing items for the prompt
+  const existingItemsText = existingItems.length > 0
+    ? existingItems.map(i => `- ${i.name} (qty: ${i.quantity})`).join('\n')
+    : '(No existing items in this location)'
+
+  const prompt = VISION_WITH_INVENTORY_PROMPT.replace('{EXISTING_ITEMS}', existingItemsText)
+  content.push(prompt)
+
+  const result = await model.generateContent(content)
+  const response = await result.response
+  const text = response.text()
+
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+    const items: DetectedItem[] = (parsed.items || []).map((item: Partial<DetectedItem>) => ({
+      ...item,
+      is_new_item: item.is_new_item ?? true,
+      possible_duplicate_of: item.possible_duplicate_of ?? null,
+    }))
+
+    const highConfidence = items.filter(item => item.confidence >= 0.8).length
+    const needsReview = items.filter(item => item.confidence < 0.8).length
+    const duplicates = items.filter(item => !item.is_new_item).length
+
+    return {
+      items,
+      summary: {
+        total_detected: items.length,
+        high_confidence: highConfidence,
+        needs_review: needsReview + duplicates, // Include duplicates in review count
       },
     }
   } catch {

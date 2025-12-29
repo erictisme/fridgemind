@@ -959,31 +959,72 @@ export default function InspirePage() {
       {inputMode === 'none' && !previewRecipe && (
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add a Recipe</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <button
               onClick={() => setInputMode('url')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
             >
-              <span className="text-2xl mb-2 block">📸</span>
-              <span className="font-medium text-gray-900">Instagram URL</span>
-              <p className="text-sm text-gray-500 mt-1">Single recipe from Instagram</p>
+              <span className="text-2xl mb-2 block">🔗</span>
+              <span className="font-medium text-gray-900 text-sm">From URL</span>
+              <p className="text-xs text-gray-500 mt-1">Any recipe website, YouTube, Instagram</p>
             </button>
             <button
               onClick={() => setInputMode('text')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
             >
               <span className="text-2xl mb-2 block">✍️</span>
-              <span className="font-medium text-gray-900">Paste Recipe</span>
-              <p className="text-sm text-gray-500 mt-1">Paste a single recipe</p>
+              <span className="font-medium text-gray-900 text-sm">Paste Text</span>
+              <p className="text-xs text-gray-500 mt-1">Copy/paste recipe</p>
             </button>
             <button
               onClick={() => setInputMode('bulk')}
               className="p-4 bg-white rounded-xl border-2 border-purple-100 hover:border-purple-300 transition-colors text-left"
             >
               <span className="text-2xl mb-2 block">📚</span>
-              <span className="font-medium text-gray-900">Bulk Import</span>
-              <p className="text-sm text-gray-500 mt-1">Multiple recipes from URL or text</p>
+              <span className="font-medium text-gray-900 text-sm">Bulk Import</span>
+              <p className="text-xs text-gray-500 mt-1">Multiple from one page</p>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Browse Trusted Recipe Sources */}
+      {inputMode === 'none' && !previewRecipe && !showSuggestions && !showIngredientPicker && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <span className="text-3xl">⭐</span>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-gray-900">Browse Trusted Sources</h2>
+              <p className="text-sm text-gray-600 mt-1 mb-4">
+                Quality recipe sites recommended by home cooks. Find a recipe, copy the URL, paste above!
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { name: 'Serious Eats', url: 'https://www.seriouseats.com/recipes', desc: 'Science-backed' },
+                  { name: 'RecipeTin Eats', url: 'https://www.recipetineats.com', desc: 'Reliable home cooking' },
+                  { name: 'Woks of Life', url: 'https://thewoksoflife.com', desc: 'Asian recipes' },
+                  { name: 'Smitten Kitchen', url: 'https://smittenkitchen.com', desc: 'Tested favorites' },
+                  { name: 'Budget Bytes', url: 'https://www.budgetbytes.com', desc: 'Affordable meals' },
+                  { name: 'Minimalist Baker', url: 'https://minimalistbaker.com', desc: 'Simple recipes' },
+                ].map((site) => (
+                  <a
+                    key={site.name}
+                    href={site.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-3 bg-white rounded-lg border border-blue-100 hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                  >
+                    <span className="font-medium text-gray-900 text-sm block">{site.name}</span>
+                    <span className="text-xs text-gray-500">{site.desc}</span>
+                  </a>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-400 mt-4">
+                Tip: Find a recipe you like, copy the URL, then use &quot;From URL&quot; above to save it!
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -1209,7 +1250,7 @@ export default function InspirePage() {
       {inputMode === 'url' && !previewRecipe && (
         <div className="bg-white rounded-xl border-2 border-purple-200 p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Paste Instagram URL</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Paste Recipe URL</h2>
             <button
               onClick={() => { setInputMode('none'); setUrlInput('') }}
               className="text-gray-400 hover:text-gray-600"
@@ -1217,12 +1258,15 @@ export default function InspirePage() {
               Cancel
             </button>
           </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Works with any recipe website, YouTube, or Instagram
+          </p>
           <form onSubmit={handleParseUrl} className="space-y-4">
             <input
               type="url"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="https://www.instagram.com/p/..."
+              placeholder="https://www.seriouseats.com/... or any recipe URL"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               disabled={parsing}
             />

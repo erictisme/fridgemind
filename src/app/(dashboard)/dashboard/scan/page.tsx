@@ -20,6 +20,9 @@ interface DetectedItem {
   location: string
   selected: boolean
   notDetected?: boolean  // True for items in inventory but not seen in scan
+  // Duplicate detection from AI
+  is_new_item: boolean  // true = new item, false = might match existing
+  possible_duplicate_of?: string | null  // Name of existing item it might match
 }
 
 interface ExistingInventoryItem {
@@ -227,9 +230,12 @@ export default function ScanPage() {
           location: item.location,
           selected: true,  // Include by default so it gets processed
           notDetected: true,  // Visual flag
+          is_new_item: false,  // These are existing items
+          possible_duplicate_of: null,
         }))
 
       // Step 5: For detected items, check if they match existing items (to preserve ID)
+      // Also use AI's duplicate detection to show confirmation UI
       const detectedWithIds = scanData.items.map((item: DetectedItem) => {
         const normalizedName = normalizeItemName(item.name)
         const existingMatch = existingItems.find(
@@ -240,6 +246,8 @@ export default function ScanPage() {
           id: existingMatch?.id,  // Attach existing ID if found
           selected: item.confidence >= 0.7,
           notDetected: false,
+          is_new_item: item.is_new_item ?? !existingMatch,  // Use AI detection, fallback to client check
+          possible_duplicate_of: item.possible_duplicate_of || (existingMatch ? existingMatch.name : null),
         }
       })
 
@@ -262,10 +270,18 @@ export default function ScanPage() {
     )
   }
 
-  const updateItemField = (index: number, field: keyof DetectedItem, value: string | number) => {
+  const updateItemField = (index: number, field: keyof DetectedItem, value: string | number | boolean) => {
     setDetectedItems(prev =>
       prev.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
+      )
+    )
+  }
+
+  const toggleIsNewItem = (index: number) => {
+    setDetectedItems(prev =>
+      prev.map((item, i) =>
+        i === index ? { ...item, is_new_item: !item.is_new_item } : item
       )
     )
   }
@@ -530,9 +546,14 @@ export default function ScanPage() {
                     ({detectedItems.filter(i => i.notDetected).length} not detected)
                   </span>
                 )}
+                {detectedItems.filter(i => !i.notDetected && !i.is_new_item && i.possible_duplicate_of).length > 0 && (
+                  <span className="text-blue-600 ml-1">
+                    ({detectedItems.filter(i => !i.notDetected && !i.is_new_item && i.possible_duplicate_of).length} may match existing)
+                  </span>
+                )}
               </p>
               <p className="text-sm text-gray-400">
-                Review and adjust quantities. Items at 0 will be removed.
+                Review and adjust. Mark items as "Same" or "New".
               </p>
             </div>
             <button
@@ -551,6 +572,14 @@ export default function ScanPage() {
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
               <strong>Items not detected</strong> are shown with qty=0 and will be removed from inventory.
               Edit the quantity to keep them.
+            </div>
+          )}
+
+          {/* Info banner about duplicate detection */}
+          {detectedItems.filter(i => !i.notDetected && !i.is_new_item && i.possible_duplicate_of).length > 0 && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+              <strong>Possible duplicates detected.</strong> Items marked "Same" will update your existing inventory.
+              Mark as "New" if you bought additional quantity.
             </div>
           )}
 
@@ -648,6 +677,47 @@ export default function ScanPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Duplicate detection toggle */}
+                      {!item.notDetected && item.possible_duplicate_of && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-blue-700 text-xs">
+                                {item.is_new_item ? '📦 New item' : `🔄 Same as "${item.possible_duplicate_of}"?`}
+                              </span>
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (item.is_new_item) toggleIsNewItem(index)
+                                }}
+                                className={`text-xs px-2 py-1 rounded ${
+                                  !item.is_new_item
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-blue-600 border border-blue-300 hover:bg-blue-50'
+                                }`}
+                              >
+                                Same
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!item.is_new_item) toggleIsNewItem(index)
+                                }}
+                                className={`text-xs px-2 py-1 rounded ${
+                                  item.is_new_item
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-white text-emerald-600 border border-emerald-300 hover:bg-emerald-50'
+                                }`}
+                              >
+                                New
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         <span className={`text-xs px-2 py-0.5 rounded ${

@@ -13,6 +13,9 @@ interface InventoryItemInput {
   expiry_date: string
   freshness: string
   confidence: number
+  // Duplicate detection fields
+  is_new_item?: boolean  // true = new, false = update existing
+  possible_duplicate_of?: string | null  // Name of existing item to update
 }
 
 // Normalize item name for matching (lowercase, trim, remove plurals)
@@ -169,18 +172,35 @@ export async function POST(request: NextRequest) {
     const updatedItems: string[] = []
 
     for (const item of items) {
-      // Find matching existing item by normalized name and location
-      const match = existing.find((e: { name: string; location: string }) =>
-        normalizeItemName(e.name) === normalizeItemName(item.name) &&
-        e.location === item.location
-      )
+      // Find matching existing item by:
+      // 1. possible_duplicate_of name (AI-detected match)
+      // 2. normalized name match
+      let match = null
+
+      // If user marked this as "same as existing", find by possible_duplicate_of
+      if (item.is_new_item === false && item.possible_duplicate_of) {
+        match = existing.find((e: { name: string; location: string }) =>
+          normalizeItemName(e.name) === normalizeItemName(item.possible_duplicate_of!) &&
+          e.location === item.location
+        )
+      }
+
+      // Fallback to exact name match
+      if (!match) {
+        match = existing.find((e: { name: string; location: string }) =>
+          normalizeItemName(e.name) === normalizeItemName(item.name) &&
+          e.location === item.location
+        )
+      }
 
       if (match) {
-        // Update existing
+        // Update existing item
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
           .from('inventory_items')
           .update({
+            // Keep the existing item's name if updating via possible_duplicate_of
+            name: item.is_new_item === false && item.possible_duplicate_of ? match.name : item.name,
             quantity: item.quantity,
             unit: item.unit,
             storage_category: item.storage_category,
@@ -192,9 +212,9 @@ export async function POST(request: NextRequest) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', match.id)
-        updatedItems.push(item.name)
-      } else {
-        // Insert new
+        updatedItems.push(match.name)
+      } else if (item.is_new_item !== false) {
+        // Only insert if not marked as "same as existing" (or is explicitly new)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
           .from('inventory_items')
@@ -213,6 +233,7 @@ export async function POST(request: NextRequest) {
           })
         insertedItems.push(item.name)
       }
+      // If is_new_item === false but no match found, we skip (don't create orphan)
     }
 
     return NextResponse.json({

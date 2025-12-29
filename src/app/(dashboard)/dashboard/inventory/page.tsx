@@ -369,16 +369,16 @@ export default function InventoryPage() {
     }
   }
 
-  // "Still OK" - extend expiry by 3 days from today
-  const handleStillOk = async () => {
+  // "Still OK" - extend expiry by N days from today
+  const handleStillOk = async (days: number) => {
     if (!editingItem) return
 
     setSaving(true)
 
     try {
-      // Calculate new expiry: today + 3 days
+      // Calculate new expiry: today + N days
       const today = new Date()
-      today.setDate(today.getDate() + 3)
+      today.setDate(today.getDate() + days)
       const newExpiryDate = today.toISOString().split('T')[0]
 
       const response = await fetch('/api/inventory', {
@@ -898,7 +898,7 @@ export default function InventoryPage() {
                 {/* Expanded edit form */}
                 {isExpanded && editingItem && (
                   <div className="px-3 pb-3 space-y-2 bg-gray-50 border-t border-gray-200">
-                    {/* Primary quick actions */}
+                    {/* Primary quick actions - all same size */}
                     <div className="flex gap-2 pt-3">
                       <button
                         onClick={() => handleRemove('consumed')}
@@ -916,22 +916,41 @@ export default function InventoryPage() {
                       </button>
                     </div>
 
-                    {/* Secondary actions */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleRemove('wrong_entry')}
-                        disabled={saving}
-                        className="flex-1 px-3 py-2 bg-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-300 active:bg-gray-400 disabled:opacity-50"
-                      >
-                        Wrong entry
-                      </button>
-                      <button
-                        onClick={() => handleStillOk()}
-                        disabled={saving}
-                        className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 active:bg-blue-300 disabled:opacity-50"
-                      >
-                        Still OK (+3d)
-                      </button>
+                    {/* Wrong entry - same size as above */}
+                    <button
+                      onClick={() => handleRemove('wrong_entry')}
+                      disabled={saving}
+                      className="w-full px-3 py-3 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-300 active:bg-gray-400 disabled:opacity-50"
+                    >
+                      ✗ Wrong entry
+                    </button>
+
+                    {/* Still OK - pick how many days */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-gray-500 font-medium">Still OK? Extend expiry by:</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleStillOk(3)}
+                          disabled={saving}
+                          className="flex-1 px-3 py-3 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50"
+                        >
+                          +3 days
+                        </button>
+                        <button
+                          onClick={() => handleStillOk(5)}
+                          disabled={saving}
+                          className="flex-1 px-3 py-3 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50"
+                        >
+                          +5 days
+                        </button>
+                        <button
+                          onClick={() => handleStillOk(7)}
+                          disabled={saving}
+                          className="flex-1 px-3 py-3 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50"
+                        >
+                          +7 days
+                        </button>
+                      </div>
                     </div>
 
                     {/* Edit fields - collapsible */}

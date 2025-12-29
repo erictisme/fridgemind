@@ -202,7 +202,99 @@ ${content}`
 }
 
 // ============================================
-// 3. Generate Shopping List from Recipe
+// 3. Extract Recipe from YouTube Video Description
+// ============================================
+
+const YOUTUBE_RECIPE_PROMPT = `You are a recipe assistant analyzing a YouTube video description. Extract a recipe from the video description text.
+
+Key principle: YouTube cooking videos often have recipes in the description with timestamps, affiliate links, and other content mixed in. Focus on extracting the actual recipe.
+
+Rules:
+- Determine if this description contains a recipe (ingredients + cooking instructions)
+- If it's just a video description without recipe details, set is_recipe: false
+- Extract ingredients (often listed with bullet points or numbers)
+- Extract cooking instructions (may be scattered or referenced)
+- Ignore: timestamps, affiliate links, subscribe buttons, sponsor mentions
+- Guess serving size and cooking time if not stated
+- Identify cuisine type and add tags
+- Be thorough - video descriptions often have detailed recipes
+
+Return ONLY valid JSON:
+{
+  "is_recipe": true,
+  "name": "Recipe Name",
+  "description": "Brief description",
+  "ingredients": [
+    { "name": "ingredient", "quantity": "amount", "unit": "unit", "optional": false }
+  ],
+  "instructions": "Combined cooking instructions...",
+  "estimated_time_minutes": 30,
+  "servings": 2,
+  "cuisine_type": "asian",
+  "tags": ["quick", "healthy"],
+  "confidence": 0.8
+}
+
+Do not include any text before or after the JSON.`
+
+export async function extractRecipeFromYouTube(
+  description: string,
+  videoTitle?: string
+): Promise<ParsedRecipe> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  let content = `YouTube video description:
+"""
+${description}
+"""`
+
+  if (videoTitle) {
+    content = `Video title: ${videoTitle}
+
+${content}`
+  }
+
+  const prompt = `${YOUTUBE_RECIPE_PROMPT}
+
+${content}`
+
+  const result = await model.generateContent(prompt)
+  const response = await result.response
+  const responseText = response.text()
+
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('No JSON object found in response')
+    }
+
+    const parsed = JSON.parse(jsonMatch[0])
+
+    return {
+      is_recipe: parsed.is_recipe ?? false,
+      name: parsed.name || videoTitle || 'YouTube Recipe',
+      description: parsed.description || null,
+      ingredients: (parsed.ingredients || []).map((ing: RecipeIngredient) => ({
+        name: ing.name || 'Unknown',
+        quantity: ing.quantity ?? '',
+        unit: ing.unit || '',
+        optional: ing.optional || false,
+      })),
+      instructions: parsed.instructions || null,
+      estimated_time_minutes: typeof parsed.estimated_time_minutes === 'number' ? parsed.estimated_time_minutes : null,
+      servings: typeof parsed.servings === 'number' ? parsed.servings : null,
+      cuisine_type: parsed.cuisine_type || null,
+      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    }
+  } catch (err) {
+    console.error('Failed to extract YouTube recipe:', responseText, err)
+    throw new Error('Failed to extract recipe from YouTube video')
+  }
+}
+
+// ============================================
+// 4. Generate Shopping List from Recipe
 // ============================================
 
 const RECIPE_TO_SHOPPING_PROMPT = `You are a cooking assistant. Given a recipe's ingredients and the user's current inventory, generate a shopping list of what they need to buy.

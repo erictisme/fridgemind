@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { analyzeMultipleImages } from '@/lib/gemini/vision'
+import { analyzeImagesWithInventory } from '@/lib/gemini/vision'
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,8 +22,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid location' }, { status: 400 })
     }
 
-    // Analyze images with Gemini Vision
-    const result = await analyzeMultipleImages(images)
+    // Fetch existing inventory for this location to cross-check for duplicates
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingItems } = await (supabase as any)
+      .from('inventory_items')
+      .select('name, quantity')
+      .eq('user_id', user.id)
+      .eq('location', location)
+      .is('consumed_at', null)
+
+    // Analyze images with Gemini Vision, cross-checking against existing inventory
+    const result = await analyzeImagesWithInventory(
+      images,
+      existingItems || []
+    )
 
     // Calculate expiry dates from days, default purchase_date to today
     const today = new Date().toISOString().split('T')[0]
@@ -34,13 +46,23 @@ export async function POST(request: NextRequest) {
         .toISOString()
         .split('T')[0],
       location,
+      // Duplicate detection fields from AI
+      is_new_item: item.is_new_item ?? true,
+      possible_duplicate_of: item.possible_duplicate_of ?? null,
     }))
+
+    // Count duplicates for summary
+    const duplicateCount = itemsWithExpiry.filter(i => !i.is_new_item).length
 
     return NextResponse.json({
       success: true,
       items: itemsWithExpiry,
-      summary: result.summary,
+      summary: {
+        ...result.summary,
+        possible_duplicates: duplicateCount,
+      },
       location,
+      existing_item_count: existingItems?.length || 0,
     })
   } catch (error) {
     console.error('Scan error:', error)
