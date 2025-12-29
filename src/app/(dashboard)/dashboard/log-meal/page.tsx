@@ -68,6 +68,9 @@ export default function LogMealPage() {
   const [leftoverName, setLeftoverName] = useState('')
   const [leftoverExpiry, setLeftoverExpiry] = useState(3)
 
+  // AI nutrition estimate state
+  const [estimatingAI, setEstimatingAI] = useState(false)
+
   // Debounced FatSecret search
   useEffect(() => {
     if (searchQuery.length < 2) {
@@ -100,6 +103,46 @@ export default function LogMealPage() {
       }
     }
   }, [searchQuery])
+
+  // Get AI nutrition estimate for foods not in FatSecret
+  const handleAINutritionEstimate = async (foodName: string) => {
+    setEstimatingAI(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/nutrition/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: foodName }),
+      })
+
+      if (!response.ok) throw new Error('Failed to estimate nutrition')
+
+      const data = await response.json()
+      setNutrition({
+        meal_name: data.meal_name,
+        detected_components: data.detected_components || [],
+        estimated_calories: data.estimated_calories,
+        protein_grams: data.protein_grams,
+        carbs_grams: data.carbs_grams,
+        fat_grams: data.fat_grams,
+        fiber_grams: data.fiber_grams || 0,
+        vegetable_servings: data.vegetable_servings || 0,
+        health_assessment: data.health_assessment || 'balanced',
+        notes: data.notes || 'AI estimated based on typical preparation',
+        source: 'gemini',
+      })
+      setMealName(data.meal_name || foodName)
+      setSearchQuery('')
+      setSearchResults([])
+      setStep('result')
+    } catch (err) {
+      console.error('AI estimation error:', err)
+      setError('Failed to estimate nutrition. Try logging without nutrition.')
+    } finally {
+      setEstimatingAI(false)
+    }
+  }
 
   const compressImage = (dataUrl: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
     return new Promise((resolve) => {
@@ -533,19 +576,48 @@ export default function LogMealPage() {
             </>
           )}
 
-          {/* Manual Entry Option */}
+          {/* Manual Entry Option - with AI fallback */}
           {searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
-            <div className="text-center py-6">
-              <p className="text-gray-500 mb-3">No results found</p>
+            <div className="text-center py-6 space-y-4">
+              <p className="text-gray-500">No results in database</p>
+
+              {/* AI Estimation Option */}
+              <button
+                onClick={() => handleAINutritionEstimate(searchQuery)}
+                disabled={estimatingAI}
+                className="w-full py-3 bg-purple-100 text-purple-700 rounded-xl font-medium hover:bg-purple-200 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {estimatingAI ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-purple-300 border-t-purple-700 rounded-full animate-spin" />
+                    Estimating with AI...
+                  </>
+                ) : (
+                  <>
+                    <span>🤖</span> Get AI nutrition estimate
+                  </>
+                )}
+              </button>
+
+              <p className="text-xs text-gray-400">
+                AI will estimate based on typical &quot;{searchQuery}&quot; preparation
+              </p>
+
+              <div className="flex items-center gap-3 text-gray-300">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs">or</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+
               <button
                 onClick={() => {
                   setMealName(searchQuery)
                   setNutrition(null)
                   setStep('result')
                 }}
-                className="text-emerald-600 hover:underline"
+                className="text-gray-500 hover:text-gray-700 text-sm"
               >
-                Log &quot;{searchQuery}&quot; without nutrition →
+                Log without nutrition →
               </button>
             </div>
           )}

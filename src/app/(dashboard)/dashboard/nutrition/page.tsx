@@ -102,12 +102,12 @@ export default function NutritionPage() {
 
   if (loading) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-24 bg-gray-200 rounded-xl"></div>
+              <div key={i} className="h-20 sm:h-24 bg-gray-200 rounded-xl"></div>
             ))}
           </div>
         </div>
@@ -120,25 +120,25 @@ export default function NutritionPage() {
   const recommendationInsights = insights.filter(i => i.type === 'recommendation')
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-4 sm:space-y-6 pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Nutrition</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nutrition</h1>
         <Link
           href="/dashboard/log-meal"
-          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium text-sm"
+          className="px-3 sm:px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium text-sm whitespace-nowrap"
         >
           + Log Meal
         </Link>
       </div>
 
       {/* Period Selector */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {(['daily', 'weekly', 'monthly'] as const).map(p => (
           <button
             key={p}
             onClick={() => setPeriod(p)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            className={`px-3 sm:px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               period === p
                 ? 'bg-gray-900 text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -185,24 +185,24 @@ export default function NutritionPage() {
 
       {/* Secondary Stats */}
       {summary && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
-            <div className="text-2xl font-bold text-emerald-600">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="bg-emerald-50 rounded-xl p-3 sm:p-4 border border-emerald-200">
+            <div className="text-lg sm:text-2xl font-bold text-emerald-600">
               {period === 'daily'
                 ? summary.totals.vegetable_servings.toFixed(1)
                 : summary.averages.vegetable_servings_per_day.toFixed(1)}
             </div>
-            <div className="text-xs text-emerald-700">Veggie servings{period !== 'daily' ? '/day' : ''}</div>
+            <div className="text-[10px] sm:text-xs text-emerald-700">Veggie{period !== 'daily' ? '/day' : ''}</div>
           </div>
-          <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-            <div className="text-2xl font-bold text-purple-600">
+          <div className="bg-purple-50 rounded-xl p-3 sm:p-4 border border-purple-200">
+            <div className="text-lg sm:text-2xl font-bold text-purple-600">
               {period === 'daily' ? summary.totals.fiber : summary.averages.fiber_per_day}g
             </div>
-            <div className="text-xs text-purple-700">Fiber{period !== 'daily' ? '/day' : ''}</div>
+            <div className="text-[10px] sm:text-xs text-purple-700">Fiber{period !== 'daily' ? '/day' : ''}</div>
           </div>
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">{summary.totals.meals_logged}</div>
-            <div className="text-xs text-blue-700">Meals logged</div>
+          <div className="bg-blue-50 rounded-xl p-3 sm:p-4 border border-blue-200">
+            <div className="text-lg sm:text-2xl font-bold text-blue-600">{summary.totals.meals_logged}</div>
+            <div className="text-[10px] sm:text-xs text-blue-700">Meals</div>
           </div>
         </div>
       )}
@@ -274,19 +274,19 @@ export default function NutritionPage() {
 
       {/* Daily Breakdown Chart */}
       {summary && summary.daily_breakdown.length > 0 && period !== 'daily' && (
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <h3 className="font-semibold text-gray-900 mb-4">Daily Calories</h3>
+        <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200">
+          <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-sm sm:text-base">Daily Calories</h3>
           <div className="space-y-2">
             {summary.daily_breakdown.map((day) => (
-              <div key={day.date} className="flex items-center gap-3">
-                <div className="w-16 text-xs text-gray-500">{formatDate(day.date)}</div>
-                <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+              <div key={day.date} className="flex items-center gap-2 sm:gap-3">
+                <div className="w-12 sm:w-16 text-[10px] sm:text-xs text-gray-500 flex-shrink-0">{formatDate(day.date)}</div>
+                <div className="flex-1 h-5 sm:h-6 bg-gray-100 rounded-full overflow-hidden min-w-0">
                   <div
                     className="h-full bg-gradient-to-r from-orange-400 to-orange-500 rounded-full transition-all"
                     style={{ width: `${(day.total_calories / maxCalories) * 100}%` }}
                   />
                 </div>
-                <div className="w-16 text-sm font-medium text-gray-700 text-right">
+                <div className="w-10 sm:w-16 text-xs sm:text-sm font-medium text-gray-700 text-right flex-shrink-0">
                   {day.total_calories}
                 </div>
               </div>
@@ -375,11 +375,11 @@ function MacroCard({
   textColor: string
 }) {
   return (
-    <div className={`rounded-xl p-4 border ${color}`}>
-      <div className={`text-2xl font-bold ${textColor}`}>
-        {value}{unit}
+    <div className={`rounded-xl p-3 sm:p-4 border ${color}`}>
+      <div className={`text-xl sm:text-2xl font-bold ${textColor}`}>
+        {Math.round(value)}{unit}
       </div>
-      <div className="text-xs text-gray-600">{label}</div>
+      <div className="text-[10px] sm:text-xs text-gray-600">{label}</div>
     </div>
   )
 }
