@@ -372,33 +372,26 @@ async function searchWebForRecipes(query: string, limit: number = 6): Promise<st
     const html = await response.text()
 
     // Extract result URLs from DuckDuckGo HTML results
-    // DuckDuckGo uses uddg= parameter for redirect URLs
+    // DuckDuckGo wraps URLs in //duckduckgo.com/l/?uddg=ENCODED_URL format
     const urlMatches: string[] = []
 
-    // Pattern for DuckDuckGo result links
-    const resultPattern = /class="result__a"[^>]*href="([^"]+)"/gi
+    // Pattern for DuckDuckGo redirect links with uddg parameter
+    const uddgPattern = /uddg=([^&"]+)/gi
     let match
-    while ((match = resultPattern.exec(html)) !== null) {
-      let url = match[1]
-      // DuckDuckGo may encode URLs, decode them
-      if (url.includes('uddg=')) {
-        const uddgMatch = url.match(/uddg=([^&]+)/)
-        if (uddgMatch) {
-          url = decodeURIComponent(uddgMatch[1])
-        }
-      }
-      // Only include URLs from trusted recipe sites
-      if (TRUSTED_RECIPE_SITES.some(site => url.includes(site.domain))) {
-        urlMatches.push(url)
-      }
-    }
+    while ((match = uddgPattern.exec(html)) !== null) {
+      try {
+        // Decode the URL (it's URL-encoded, and &amp; may be used)
+        let url = decodeURIComponent(match[1].replace(/&amp;/g, '&'))
+        // Clean up any remaining HTML entities
+        url = url.split('&')[0] // Remove any trailing parameters
 
-    // Also try direct URL extraction as fallback
-    const directPattern = /href="(https?:\/\/(?:www\.)?(?:seriouseats|recipetineats|budgetbytes|simplyrecipes|woksoflife|justonecookbook|maangchi|allrecipes|bonappetit)[^"]*)">/gi
-    while ((match = directPattern.exec(html)) !== null) {
-      const url = match[1]
-      if (!url.includes('/search') && !url.includes('/category') && !url.includes('/tag')) {
-        urlMatches.push(url)
+        // Only include URLs from trusted recipe sites
+        if (TRUSTED_RECIPE_SITES.some(site => url.includes(site.domain))) {
+          urlMatches.push(url)
+        }
+      } catch {
+        // Skip malformed URLs
+        continue
       }
     }
 
