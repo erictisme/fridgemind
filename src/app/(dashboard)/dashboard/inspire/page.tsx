@@ -1,33 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import RecipeSearchSection, { RecipeSearchResult } from './components/RecipeSearchSection'
+import SavedRecipesSection, { SavedRecipe } from './components/SavedRecipesSection'
 
 interface RecipeIngredient {
   name: string
   quantity?: string | number
   unit?: string
   optional?: boolean
-}
-
-interface SavedRecipe {
-  id: string
-  name: string
-  description: string | null
-  source_type: string
-  source_url: string | null
-  source_account: string | null
-  image_url: string | null
-  ingredients: RecipeIngredient[]
-  instructions: string | null
-  estimated_time_minutes: number | null
-  servings: number
-  cuisine_type: string | null
-  tags: string[]
-  is_favorite: boolean
-  times_cooked: number
-  created_at: string
 }
 
 interface ParsedRecipe {
@@ -122,6 +105,7 @@ const formatDateNum = (date: Date) => date.getDate()
 
 export default function InspirePage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [recipes, setRecipes] = useState<SavedRecipe[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -583,8 +567,6 @@ export default function InspirePage() {
   }
 
   const handleDeleteRecipe = async (id: string) => {
-    if (!confirm('Delete this recipe?')) return
-
     try {
       await fetch('/api/recipes', {
         method: 'DELETE',
@@ -604,6 +586,28 @@ export default function InspirePage() {
     } catch {
       setError('Failed to delete recipe')
     }
+  }
+
+  // Save a search result to the recipe library
+  const handleSaveSearchResult = async (result: RecipeSearchResult) => {
+    // First, fetch the full recipe details from the URL
+    const response = await fetch('/api/recipes/parse-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: result.source_url, save: true }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to save recipe')
+    }
+
+    // Refresh the recipes list
+    await fetchRecipes()
+  }
+
+  // Navigate to recipe detail
+  const handleRecipeClick = (recipe: SavedRecipe) => {
+    router.push(`/dashboard/inspire/${recipe.id}`)
   }
 
   // Bulk import handlers
@@ -877,14 +881,6 @@ export default function InspirePage() {
     }
   }
 
-  const getSourceIcon = (sourceType: string) => {
-    switch (sourceType) {
-      case 'instagram': return '📸'
-      case 'manual': return '✍️'
-      case 'ai_suggestion': return '🤖'
-      default: return '🔗'
-    }
-  }
 
   // Count meals planned (total recipes across all slots)
   const mealsPlannedThisWeek = mealPlan
@@ -953,6 +949,11 @@ export default function InspirePage() {
             </svg>
           </button>
         </div>
+      )}
+
+      {/* Recipe Search Section - Hero Feature */}
+      {inputMode === 'none' && !previewRecipe && !showSuggestions && !showIngredientPicker && (
+        <RecipeSearchSection onSaveRecipe={handleSaveSearchResult} />
       )}
 
       {/* Add Recipe Section */}
@@ -1955,92 +1956,15 @@ export default function InspirePage() {
         </div>
       </div>
 
-      {/* Saved Recipes */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Your Recipes {recipes.length > 0 && `(${recipes.length})`}
-        </h2>
-
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto"></div>
-          </div>
-        ) : recipes.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl border-2 border-gray-200">
-            <span className="text-4xl mb-4 block">📚</span>
-            <p className="text-gray-500">No recipes saved yet</p>
-            <p className="text-sm text-gray-400 mt-1">Add recipes from Instagram or paste them above</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {recipes.map(recipe => (
-              <div
-                key={recipe.id}
-                draggable
-                onDragStart={() => handleDragStart(recipe)}
-                className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:border-purple-300 hover:shadow-md transition-all cursor-grab active:cursor-grabbing"
-              >
-                <Link href={`/dashboard/inspire/${recipe.id}`} className="block">
-                  {recipe.image_url && (
-                    <div className="h-32 bg-gray-100">
-                      <img
-                        src={recipe.image_url}
-                        alt={recipe.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span title={recipe.source_type}>{getSourceIcon(recipe.source_type)}</span>
-                          <h3 className="font-semibold text-gray-900 truncate">{recipe.name}</h3>
-                        </div>
-                        {recipe.description && (
-                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{recipe.description}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={(e) => { e.preventDefault(); handleToggleFavorite(recipe) }}
-                        className={`text-xl ${recipe.is_favorite ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}
-                      >
-                        {recipe.is_favorite ? '❤️' : '🤍'}
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {recipe.estimated_time_minutes && (
-                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                          {recipe.estimated_time_minutes}m
-                        </span>
-                      )}
-                      {recipe.cuisine_type && (
-                        <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
-                          {recipe.cuisine_type}
-                        </span>
-                      )}
-                      {recipe.times_cooked > 0 && (
-                        <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
-                          Cooked {recipe.times_cooked}x
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-                <div className="px-4 pb-3 flex justify-end border-t border-gray-100 pt-2">
-                  <button
-                    onClick={() => handleDeleteRecipe(recipe.id)}
-                    className="text-sm text-gray-400 hover:text-red-600"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Saved Recipes with Filters */}
+      <SavedRecipesSection
+        recipes={recipes}
+        loading={loading}
+        onToggleFavorite={handleToggleFavorite}
+        onDeleteRecipe={handleDeleteRecipe}
+        onRecipeClick={handleRecipeClick}
+        onDragStart={handleDragStart}
+      />
     </div>
   )
 }
