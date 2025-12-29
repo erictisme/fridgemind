@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface Receipt {
   id: string
@@ -787,52 +788,43 @@ export default function HistoryPage() {
   const foodItemsCount = editableItems.filter(i => i.category !== 'household').length
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Bills & Receipts</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 rounded-lg font-medium ${
-              activeTab === 'overview'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('staples')}
-            className={`px-4 py-2 rounded-lg font-medium ${
-              activeTab === 'staples'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Staples
-          </button>
-          <button
-            onClick={() => setActiveTab('receipts')}
-            className={`px-4 py-2 rounded-lg font-medium ${
-              activeTab === 'receipts'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Receipts
-          </button>
-          <button
-            onClick={() => setActiveTab('upload')}
-            className={`px-4 py-2 rounded-lg font-medium ${
-              activeTab === 'upload'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            Upload
-          </button>
+    <div className="max-w-4xl mx-auto pb-20">
+      {/* Header */}
+      <div className="px-4 sm:px-6 pt-4 pb-2">
+        <Link href="/dashboard" className="text-gray-500 hover:text-gray-700 text-sm">
+          &larr; Home
+        </Link>
+        <h1 className="text-2xl font-bold text-gray-900 mt-1">Groceries</h1>
+        <p className="text-gray-500 text-sm">Track receipts and spending</p>
+      </div>
+
+      {/* Tab Bar - Mobile Friendly */}
+      <div className="sticky top-0 bg-gray-50/95 backdrop-blur-sm z-10 px-4 sm:px-6 py-3 border-b border-gray-200">
+        <div className="flex gap-1 overflow-x-auto pb-1 -mb-1">
+          {[
+            { id: 'overview', label: 'Overview', icon: '📊' },
+            { id: 'upload', label: 'Upload', icon: '📤' },
+            { id: 'receipts', label: 'History', icon: '🧾' },
+            { id: 'staples', label: 'Staples', icon: '🔄' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Content Area */}
+      <div className="px-4 sm:px-6 pt-6">
 
       {/* Upload Tab */}
       {activeTab === 'upload' && (
@@ -1101,78 +1093,70 @@ export default function HistoryPage() {
           {/* Upload area */}
           {!lastParsedReceipt && !bulkProgress && (
             <div className="space-y-4">
-              {/* File upload */}
-              <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-6">
-                <div className="text-center">
-                  <div className="text-3xl mb-3">🧾</div>
-                  <h3 className="text-base font-semibold text-gray-900 mb-2">
-                    Upload Receipt Files
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Select one or multiple PDFs/images. Duplicates are auto-detected.
-                  </p>
+              {/* Upload Methods Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Photo/PDF Upload */}
+                <label
+                  htmlFor="file-upload"
+                  className={`relative bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border-2 border-dashed border-emerald-300 p-6 cursor-pointer hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 transition-all group ${
+                    uploading ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                      <span className="text-2xl">📷</span>
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-1">
+                      Snap or Upload
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Take a photo or select receipt images/PDFs
+                    </p>
+                    <p className="text-xs text-emerald-600 mt-2">
+                      Supports bulk upload
+                    </p>
+                  </div>
                   <input
                     type="file"
                     accept=".pdf,image/*"
                     multiple
+                    capture="environment"
                     onChange={(e) => handleFileUpload(e.target.files)}
                     className="hidden"
                     id="file-upload"
                     disabled={uploading}
                   />
-                  <label
-                    htmlFor="file-upload"
-                    className={`inline-block px-6 py-2.5 rounded-lg font-medium cursor-pointer ${
-                      uploading
-                        ? 'bg-gray-300 text-gray-500'
-                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    }`}
-                  >
-                    {uploading ? 'Processing...' : 'Select Files'}
-                  </label>
-                </div>
-              </div>
+                  {uploading && (
+                    <div className="absolute inset-0 bg-white/80 rounded-2xl flex items-center justify-center">
+                      <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                </label>
 
-              {/* Text paste section - always visible */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">📝</span>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Paste Receipt Text</h3>
-                    <p className="text-sm text-gray-500">
-                      Copy-paste from email, online order, or boutique receipt
+                {/* Text Paste Card */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-6">
+                  <div className="text-center mb-4">
+                    <div className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-2xl">📝</span>
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-1">
+                      Paste Text
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      From email confirmations or online orders
                     </p>
                   </div>
-                </div>
-                <textarea
-                  value={receiptText}
-                  onChange={(e) => setReceiptText(e.target.value)}
-                  placeholder="Paste your receipt here...
-
-Example:
-FairPrice Xtra
-15 Dec 2024
-
-Eggs x1 - $3.50
-Milk 1L - $2.90
-Chicken Breast 500g - $8.50
-
-Total: $14.90"
-                  className="w-full h-48 p-4 border border-gray-200 rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  disabled={parsingText}
-                />
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => setReceiptText('')}
-                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                    disabled={parsingText || !receiptText.trim()}
-                  >
-                    Clear
-                  </button>
+                  <textarea
+                    value={receiptText}
+                    onChange={(e) => setReceiptText(e.target.value)}
+                    placeholder="FairPrice Xtra&#10;15 Dec 2024&#10;&#10;Eggs x1 - $3.50&#10;Milk 1L - $2.90&#10;..."
+                    className="w-full h-24 p-3 border border-blue-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white/80"
+                    disabled={parsingText}
+                  />
                   <button
                     onClick={handleTextPaste}
                     disabled={parsingText || receiptText.trim().length < 10}
-                    className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center gap-2"
+                    className="w-full mt-3 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2"
                   >
                     {parsingText ? (
                       <>
@@ -1184,6 +1168,16 @@ Total: $14.90"
                     )}
                   </button>
                 </div>
+              </div>
+
+              {/* Tips */}
+              <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                <h4 className="font-medium text-amber-800 text-sm mb-2">Tips for best results</h4>
+                <ul className="text-xs text-amber-700 space-y-1">
+                  <li>• Make sure the receipt text is clear and well-lit</li>
+                  <li>• Include the store name, date, and itemized list</li>
+                  <li>• Photos of checkout screens also work!</li>
+                </ul>
               </div>
             </div>
           )}
@@ -1835,9 +1829,11 @@ Total: $14.90"
         </div>
       )}
 
+      </div>{/* End Content Area */}
+
       {/* Success toast */}
       {inventorySuccess && (
-        <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
