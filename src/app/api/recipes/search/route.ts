@@ -408,10 +408,11 @@ async function searchRecipeSite(
 
 // YouTube Data API search for cooking videos
 async function searchYouTube(query: string, limit: number = 6): Promise<RecipeSearchResult[]> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY
+  // YouTube Data API requires its own key (different from Gemini)
+  const apiKey = process.env.YOUTUBE_API_KEY
 
   if (!apiKey) {
-    console.warn('No Google API key for YouTube search')
+    console.log('YouTube search skipped: YOUTUBE_API_KEY not configured')
     return []
   }
 
