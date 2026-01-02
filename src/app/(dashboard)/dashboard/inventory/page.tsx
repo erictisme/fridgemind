@@ -363,12 +363,12 @@ export default function InventoryPage() {
               <option value="name">Sort: A-Z</option>
               <option value="location">Sort: Location</option>
             </select>
-            {/* Legend */}
+            {/* Legend for action buttons */}
             <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Fresh</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" /> Soon</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Urgent</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-500" /> Expired</span>
+              <span className="flex items-center gap-1"><span className="text-emerald-600">✓</span> Ate it</span>
+              <span className="flex items-center gap-1"><span className="text-orange-600">🗑</span> Went bad</span>
+              <span className="flex items-center gap-1"><span className="text-blue-600">+</span> Extend</span>
+              <span className="flex items-center gap-1"><span className="text-gray-400">✕</span> Wrong</span>
             </div>
           </div>
         </div>
