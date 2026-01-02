@@ -227,38 +227,55 @@ export default function RecipeSearchCard({
           </div>
         </div>
 
-        {/* Save Button - separate from clickable area */}
+        {/* Action Button - separate from clickable area */}
         <div className="p-3 pt-0 mt-auto">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onSave()
-            }}
-            disabled={isSaving || isSaved}
-            className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${
-              isSaved
-                ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                : isSaving
-                ? 'bg-indigo-100 text-indigo-700 cursor-wait'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
-            }`}
-          >
-            {isSaved ? (
-              <span className="flex items-center justify-center gap-1">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                Saved
-              </span>
-            ) : isSaving ? (
-              <span className="flex items-center justify-center gap-2">
-                <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-700 rounded-full animate-spin" />
-                Saving...
-              </span>
-            ) : (
-              'Save to Library'
-            )}
-          </button>
+          {isYouTube ? (
+            /* YouTube: Just watch video button (extraction from descriptions is unreliable) */
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                window.open(result.source_url, '_blank', 'noopener,noreferrer')
+              }}
+              className="w-full py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+              </svg>
+              Watch on YouTube
+            </button>
+          ) : (
+            /* Web recipes: Save to library */
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onSave()
+              }}
+              disabled={isSaving || isSaved}
+              className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${
+                isSaved
+                  ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                  : isSaving
+                  ? 'bg-indigo-100 text-indigo-700 cursor-wait'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+            >
+              {isSaved ? (
+                <span className="flex items-center justify-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Saved
+                </span>
+              ) : isSaving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-700 rounded-full animate-spin" />
+                  Saving...
+                </span>
+              ) : (
+                'Save to Library'
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>
