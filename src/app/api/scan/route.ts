@@ -37,6 +37,17 @@ export async function POST(request: NextRequest) {
       existingItems || []
     )
 
+    // Check if images are valid food storage images
+    if (result.is_valid_food_image === false) {
+      return NextResponse.json({
+        success: false,
+        error: 'invalid_image',
+        message: result.invalid_reason || 'This doesn\'t appear to be a photo of food storage. Please take a photo of your fridge, freezer, or pantry contents.',
+        items: [],
+        summary: { total_detected: 0, high_confidence: 0, needs_review: 0 },
+      })
+    }
+
     // Calculate expiry dates from days, default purchase_date to today
     const today = new Date().toISOString().split('T')[0]
     const itemsWithExpiry = result.items.map(item => ({

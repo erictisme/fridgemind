@@ -23,6 +23,8 @@ export interface VisionResponse {
     high_confidence: number
     needs_review: number
   }
+  is_valid_food_image?: boolean
+  invalid_reason?: string | null
 }
 
 const VISION_PROMPT = `You are a food inventory assistant. Analyze the provided image(s) of a refrigerator/freezer/pantry and identify all visible food items.
@@ -67,13 +69,17 @@ Do not include any text before or after the JSON. Only return the JSON object.`
 // Vision prompt that cross-checks with existing inventory
 const VISION_WITH_INVENTORY_PROMPT = `You are a food inventory assistant. Analyze the provided image(s) and identify all visible food items.
 
+FIRST: Validate that this image shows food storage (fridge, freezer, pantry, or grocery items).
+If the image does NOT contain food storage or food items, set is_valid_food_image to false.
+
 EXISTING INVENTORY (items user already has tracked):
 {EXISTING_ITEMS}
 
 YOUR TASK:
-1. Identify all visible food items in the image
-2. For EACH item, check if it might be the SAME item already in inventory (not a new purchase)
-3. Mark is_new_item=false if it looks like an existing item, and set possible_duplicate_of to the matching inventory item name
+1. Check if image(s) show food storage areas or food items
+2. If valid, identify all visible food items
+3. For EACH item, check if it might be the SAME item already in inventory
+4. Mark is_new_item=false if it looks like an existing item
 
 DUPLICATE DETECTION RULES:
 - If you see "milk" and inventory has "Fresh Milk 2L", it's likely the SAME item → is_new_item: false, possible_duplicate_of: "Fresh Milk 2L"
@@ -95,6 +101,8 @@ For each item provide:
 
 Output format: Return ONLY a valid JSON object:
 {
+  "is_valid_food_image": boolean (false if image doesn't show food/storage),
+  "invalid_reason": "string explaining why if is_valid_food_image is false, null otherwise",
   "items": [
     {
       "name": "string",
@@ -750,6 +758,11 @@ export async function analyzeImagesWithInventory(
     }
 
     const parsed = JSON.parse(jsonMatch[0])
+
+    // Check if image is valid
+    const isValidFoodImage = parsed.is_valid_food_image !== false
+    const invalidReason = parsed.invalid_reason || null
+
     const items: DetectedItem[] = (parsed.items || []).map((item: Partial<DetectedItem>) => ({
       ...item,
       is_new_item: item.is_new_item ?? true,
@@ -767,6 +780,8 @@ export async function analyzeImagesWithInventory(
         high_confidence: highConfidence,
         needs_review: needsReview + duplicates, // Include duplicates in review count
       },
+      is_valid_food_image: isValidFoodImage,
+      invalid_reason: invalidReason,
     }
   } catch {
     console.error('Failed to parse Gemini response:', text)

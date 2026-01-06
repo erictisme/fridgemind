@@ -1073,7 +1073,7 @@ export default function InspirePage() {
                 </div>
               )}
 
-              <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+              <div className="max-h-64 overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg">
                 {inventoryItems.map((item, index) => {
                   const days = getDaysUntilExpiry(item.expiry_date)
                   const isSelected = selectedIngredients.includes(item.name)
@@ -1084,7 +1084,7 @@ export default function InspirePage() {
                   return (
                     <div
                       key={index}
-                      className={`flex items-center gap-3 px-3 py-2 transition-colors border-b border-gray-100 last:border-b-0 ${
+                      className={`flex items-center gap-2 px-3 py-2 transition-colors border-b border-gray-100 last:border-b-0 ${
                         isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'
                       } ${isDeleting ? 'opacity-50' : ''}`}
                     >
@@ -1092,25 +1092,26 @@ export default function InspirePage() {
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleIngredient(item.name)}
-                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer flex-shrink-0"
                       />
                       <span
-                        className={`flex-1 cursor-pointer ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}
+                        className={`flex-1 min-w-0 truncate cursor-pointer ${isSelected ? 'font-medium text-gray-900' : 'text-gray-700'}`}
                         onClick={() => toggleIngredient(item.name)}
+                        title={item.name}
                       >
                         {item.name}
                       </span>
-                      <span className="text-sm text-gray-400">×{item.quantity}</span>
+                      <span className="text-sm text-gray-400 flex-shrink-0">×{item.quantity}</span>
                       {isUrgent ? (
-                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">
                           {days <= 0 ? 'Expired!' : `${days}d left`}
                         </span>
                       ) : isExpiringSoon ? (
-                        <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">
+                        <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">
                           {days}d left
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">{days}d</span>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{days}d</span>
                       )}
                       <button
                         onClick={() => setConfirmDeleteItem({ id: item.id, name: item.name })}

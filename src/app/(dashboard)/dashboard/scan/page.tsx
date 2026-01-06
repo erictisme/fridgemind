@@ -75,6 +75,7 @@ export default function ScanPage() {
   const [estimatingExpiry, setEstimatingExpiry] = useState<number | null>(null)
   const [scanMode, setScanMode] = useState<'add' | 'replace'>('add')
   const [existingItemCount, setExistingItemCount] = useState(0)
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const estimateAbortRef = useRef<AbortController | null>(null)
   const router = useRouter()
@@ -201,6 +202,13 @@ export default function ScanPage() {
       }
 
       const scanData = await scanResponse.json()
+
+      // Check if images were invalid (not food storage)
+      if (scanData.error === 'invalid_image') {
+        setError(scanData.message || 'This doesn\'t appear to be a photo of food storage. Please take a photo of your fridge, freezer, or pantry contents.')
+        setStep('capture')
+        return
+      }
 
       // Step 2: Fetch existing inventory for this location
       const inventoryResponse = await fetch(`/api/inventory?location=${location}`)
@@ -391,6 +399,61 @@ export default function ScanPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
+      {/* Photo Preview Modal */}
+      {previewImageIndex !== null && images[previewImageIndex] && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImageIndex(null)}
+        >
+          <button
+            onClick={() => setPreviewImageIndex(null)}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <img
+            src={images[previewImageIndex]}
+            alt={`Photo ${previewImageIndex + 1}`}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {/* Navigation arrows */}
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPreviewImageIndex(i => i !== null ? Math.max(0, i - 1) : null)
+                }}
+                disabled={previewImageIndex === 0}
+                className="absolute left-4 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30 disabled:opacity-30"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPreviewImageIndex(i => i !== null ? Math.min(images.length - 1, i + 1) : null)
+                }}
+                disabled={previewImageIndex === images.length - 1}
+                className="absolute right-4 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30 disabled:opacity-30"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
+          <div className="absolute bottom-4 text-white text-sm">
+            {previewImageIndex + 1} / {images.length}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6">
         <Link href="/dashboard" className="text-gray-500 hover:text-gray-700 text-sm">
@@ -490,9 +553,12 @@ export default function ScanPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
             <p className="mt-2 text-gray-600">
-              {images.length === 0 ? 'Click to add photos' : 'Add more photos'}
+              {images.length === 0 ? 'Tap to add photos' : 'Add more photos'}
             </p>
-            <p className="text-sm text-gray-400">Supports HEIC, JPG, PNG - Take multiple shots to capture all items</p>
+            <p className="text-sm text-gray-400 mt-1">
+              Tips: Take close-up shots of labels for better detection
+            </p>
+            <p className="text-xs text-gray-300 mt-1">Multiple photos encouraged - capture different shelves/sections</p>
           </div>
 
           <input
@@ -587,14 +653,15 @@ export default function ScanPage() {
           {/* Scanned Photos Reference */}
           {images.length > 0 && (
             <div className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600 mb-2">Scanned photos ({images.length})</p>
+              <p className="text-sm text-gray-600 mb-2">Scanned photos ({images.length}) - tap to view</p>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {images.map((img, i) => (
                   <img
                     key={i}
                     src={img}
                     alt={`Photo ${i + 1}`}
-                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0 border border-gray-200"
+                    onClick={() => setPreviewImageIndex(i)}
+                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0 border border-gray-200 cursor-pointer hover:border-emerald-400 hover:ring-2 hover:ring-emerald-200 transition-all"
                   />
                 ))}
               </div>
@@ -637,16 +704,12 @@ export default function ScanPage() {
 
                     {/* Item summary */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
-                          {item.notDetected && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
-                              Not detected
-                            </span>
-                          )}
+                      {/* Row 1: Name and action buttons */}
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 break-words">{item.name}</h3>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
                           {!item.notDetected && (
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full ${
@@ -660,9 +723,14 @@ export default function ScanPage() {
                               {Math.round(item.confidence * 100)}%
                             </span>
                           )}
+                          {item.notDetected && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
+                              Not detected
+                            </span>
+                          )}
                           <button
                             onClick={() => setEditingIndex(editingIndex === index ? null : index)}
-                            className="text-gray-400 hover:text-emerald-600"
+                            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -670,7 +738,7 @@ export default function ScanPage() {
                           </button>
                           <button
                             onClick={() => deleteItem(index)}
-                            className="text-gray-400 hover:text-red-600"
+                            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -867,6 +935,35 @@ export default function ScanPage() {
               <p>No items detected. Try scanning again with better lighting.</p>
             </div>
           )}
+
+          {/* Manual Add Button */}
+          <button
+            onClick={() => {
+              const newItem: DetectedItem = {
+                name: 'New Item',
+                storage_category: location,
+                nutritional_type: 'misc',
+                quantity: 1,
+                unit: 'piece',
+                purchase_date: new Date().toISOString().split('T')[0],
+                expiry_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                freshness: 'fresh',
+                confidence: 1,
+                location: location,
+                selected: true,
+                is_new_item: true,
+                possible_duplicate_of: null,
+              }
+              setDetectedItems(prev => [...prev, newItem])
+              setEditingIndex(detectedItems.length) // Open edit form for new item
+            }}
+            className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add item manually
+          </button>
 
           {/* Mode Toggle */}
           <div className="border-t border-gray-200 pt-4 space-y-3">
