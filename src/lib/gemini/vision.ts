@@ -540,7 +540,7 @@ ${priorityInstructions}${distinctnessRule}
 Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1 ? 's' : ''}:
 [
   {
-    "name": "Meal Name",
+    "name": "Simple chicken stir-fry",
     "description": "Brief appetizing 1-sentence description",
     "recipe_steps": ["Step 1 instruction", "Step 2 instruction", "Step 3 instruction"],
     "estimated_time_minutes": number,
@@ -552,7 +552,11 @@ Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1
   }
 ]
 
-IMPORTANT: recipe_steps must be an array of strings, each step as a separate item. Do NOT use numbered prefixes like "1." in the steps.
+IMPORTANT FORMATTING:
+- recipe_steps must be an array of strings, each step as a separate item
+- Do NOT use numbered prefixes like "1." in the steps
+- Recipe names should be lowercase/sentence case (e.g., "Garlic butter salmon" NOT "Garlic Butter Salmon")
+- Avoid AI-sounding names - use simple, natural recipe names a home cook would use
 
 Do not include any text before or after the JSON array.`
 

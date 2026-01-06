@@ -154,6 +154,11 @@ export default function InspirePage() {
   const [textInput, setTextInput] = useState('')
   const [parsing, setParsing] = useState(false)
 
+  // Food photo to recipe search state
+  const [foodPhotoSearching, setFoodPhotoSearching] = useState(false)
+  const [foodPhotoResults, setFoodPhotoResults] = useState<RecipeSearchResult[] | null>(null)
+  const [detectedIngredients, setDetectedIngredients] = useState<string[]>([])
+
   // Preview state
   const [previewRecipe, setPreviewRecipe] = useState<ParsedRecipe | null>(null)
   const [previewSource, setPreviewSource] = useState<{
@@ -950,6 +955,53 @@ export default function InspirePage() {
               <span className="font-medium text-gray-900 text-sm">Paste Text</span>
               <p className="text-xs text-gray-500 mt-1">Copy/paste recipe</p>
             </button>
+            <label className="p-4 bg-white rounded-xl border-2 border-orange-100 hover:border-orange-300 transition-colors text-left cursor-pointer col-span-2 sm:col-span-1">
+              <span className="text-2xl mb-2 block">🥕</span>
+              <span className="font-medium text-gray-900 text-sm">Snap Ingredients</span>
+              <p className="text-xs text-gray-500 mt-1">Photo of food → find real recipes</p>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+
+                  const base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () => resolve(reader.result as string)
+                    reader.onerror = reject
+                    reader.readAsDataURL(file)
+                  })
+
+                  setFoodPhotoSearching(true)
+                  setError(null)
+                  setFoodPhotoResults(null)
+
+                  try {
+                    const res = await fetch('/api/recipes/from-photo', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ image: base64 }),
+                    })
+
+                    const data = await res.json()
+
+                    if (res.ok && data.recipes) {
+                      setDetectedIngredients(data.detected_ingredients || [])
+                      setFoodPhotoResults(data.recipes)
+                    } else {
+                      setError(data.error || 'Could not find recipes for these ingredients')
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to search recipes')
+                  } finally {
+                    setFoodPhotoSearching(false)
+                    e.target.value = ''
+                  }
+                }}
+                className="hidden"
+              />
+            </label>
           </div>
           {parsing && (
             <div className="mt-4 flex items-center gap-2 text-purple-600">
@@ -957,39 +1009,90 @@ export default function InspirePage() {
               <span className="text-sm">Extracting recipe from photo...</span>
             </div>
           )}
-          {error && inputMode === 'none' && (
+          {foodPhotoSearching && (
+            <div className="mt-4 flex items-center gap-2 text-orange-600">
+              <div className="w-5 h-5 border-2 border-orange-200 border-t-orange-600 rounded-full animate-spin"></div>
+              <span className="text-sm">Identifying ingredients and searching for recipes...</span>
+            </div>
+          )}
+          {error && inputMode === 'none' && !foodPhotoResults && (
             <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
               {error}
+            </div>
+          )}
+          {/* Food Photo Results */}
+          {foodPhotoResults && foodPhotoResults.length > 0 && (
+            <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-medium text-gray-900">Found {foodPhotoResults.length} recipes</h3>
+                  <p className="text-xs text-gray-500">
+                    Detected: {detectedIngredients.join(', ')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setFoodPhotoResults(null)
+                    setDetectedIngredients([])
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-sm"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {foodPhotoResults.map((recipe, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 bg-white rounded-lg border border-orange-100 hover:border-orange-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-gray-900 text-sm truncate">{recipe.name}</h4>
+                        <p className="text-xs text-gray-500 truncate">{recipe.source_name}</p>
+                        {recipe.ingredients_preview && recipe.ingredients_preview.length > 0 && (
+                          <p className="text-xs text-gray-400 mt-1 truncate">
+                            {recipe.ingredients_preview.slice(0, 3).join(', ')}...
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleSaveSearchResult(recipe)}
+                        className="px-3 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 flex-shrink-0"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
 
 
-      {/* Generate Recipes Section */}
+      {/* Generate Recipes from Inventory */}
       {inputMode === 'none' && !previewRecipe && !showSuggestions && !showIngredientPicker && (
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200 p-6 mb-6">
-          <div className="flex items-start gap-4">
-            <span className="text-3xl">🤖</span>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-gray-900">Generate Recipe Ideas</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                AI will suggest meals based on what&apos;s in your inventory.
-              </p>
-              <div className="flex flex-wrap gap-2 mt-4">
-                <button
-                  onClick={openIngredientPicker}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
-                >
-                  🍳 What to Cook?
-                </button>
-                <button
-                  onClick={() => handleGenerateSuggestions(true)}
-                  className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200"
-                >
-                  🎲 Surprise Me
-                </button>
-              </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-gray-900">Generate recipes from inventory</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Get meal ideas based on what you already have at home.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                onClick={openIngredientPicker}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700"
+              >
+                🍳 What to cook?
+              </button>
+              <button
+                onClick={() => handleGenerateSuggestions(true)}
+                className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium hover:bg-purple-200"
+              >
+                🎲 Surprise me
+              </button>
             </div>
           </div>
         </div>
@@ -1349,7 +1452,7 @@ export default function InspirePage() {
         <div className="bg-white rounded-xl border-2 border-emerald-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold text-gray-900">
-              {challengeMode ? '🎲 Try Something New' : '🤖 Generated Ideas'}
+              {challengeMode ? '🎲 Try something new' : '✨ Recipe ideas'}
             </h2>
             <button
               onClick={() => { setShowSuggestions(false); setSuggestions([]) }}
