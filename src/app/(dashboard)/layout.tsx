@@ -27,14 +27,14 @@ export default async function DashboardLayout({
               <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
                 <NavLink href="/dashboard">Home</NavLink>
                 <NavLink href="/dashboard/inspire">Inspire</NavLink>
-                <NavLink href="/dashboard/shopping-list">List</NavLink>
+                <NavLink href="/dashboard/shopping-list">Shop</NavLink>
                 <NavLink href="/dashboard/inventory">Inventory</NavLink>
                 <NavLink href="/dashboard/nutrition">Nutrition</NavLink>
                 <NavLink href="/dashboard/groceries">Receipts</NavLink>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">{user.email}</span>
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <span className="hidden sm:inline text-sm text-gray-500 truncate max-w-[150px]">{user.email}</span>
               <SignOutButton />
             </div>
           </div>
@@ -46,7 +46,7 @@ export default async function DashboardLayout({
         <div className="flex space-x-2 overflow-x-auto">
           <MobileNavLink href="/dashboard">Home</MobileNavLink>
           <MobileNavLink href="/dashboard/inspire">Inspire</MobileNavLink>
-          <MobileNavLink href="/dashboard/shopping-list">List</MobileNavLink>
+          <MobileNavLink href="/dashboard/shopping-list">Shop</MobileNavLink>
           <MobileNavLink href="/dashboard/inventory">Inventory</MobileNavLink>
           <MobileNavLink href="/dashboard/nutrition">Nutrition</MobileNavLink>
           <MobileNavLink href="/dashboard/groceries">Receipts</MobileNavLink>

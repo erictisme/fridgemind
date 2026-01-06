@@ -80,37 +80,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    // If reason is 'eaten' or 'bad', we could log to a waste_log table
-    // For now, just update consumed_at and waste_reason
-    if (reason === 'eaten') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
-        .from('inventory_items')
-        .update({
-          consumed_at: new Date().toISOString(),
-          waste_reason: null,
-        })
-        .eq('id', id)
-        .eq('user_id', user.id)
-    } else if (reason === 'bad') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
-        .from('inventory_items')
-        .update({
-          consumed_at: new Date().toISOString(),
-          waste_reason: 'spoiled',
-        })
-        .eq('id', id)
-        .eq('user_id', user.id)
-    } else {
-      // 'wrong' or no reason - just delete
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
-        .from('inventory_items')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id)
-    }
+    // Always hard delete the item - soft delete caused items to reappear
+    // The reason is logged for analytics but item is removed from inventory
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('inventory_items')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
 
     return NextResponse.json({
       success: true,
