@@ -85,13 +85,11 @@ function MobileNavLink({ href, children }: { href: string; children: React.React
 
 function SignOutButton() {
   return (
-    <form action="/auth/signout" method="post">
-      <button
-        type="submit"
-        className="text-sm text-gray-500 hover:text-gray-700"
-      >
-        Sign out
-      </button>
-    </form>
+    <a
+      href="/auth/signout"
+      className="text-sm text-gray-500 hover:text-gray-700"
+    >
+      Sign out
+    </a>
   )
 }

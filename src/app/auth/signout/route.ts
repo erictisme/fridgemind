@@ -6,5 +6,14 @@ export async function POST(request: Request) {
   await supabase.auth.signOut()
 
   const { origin } = new URL(request.url)
-  return NextResponse.redirect(`${origin}/login`)
+  return NextResponse.redirect(`${origin}/login`, { status: 302 })
+}
+
+// Also handle GET for direct navigation
+export async function GET(request: Request) {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+
+  const { origin } = new URL(request.url)
+  return NextResponse.redirect(`${origin}/login`, { status: 302 })
 }

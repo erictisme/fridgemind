@@ -200,7 +200,7 @@ export async function GET() {
       actions.push({
         type: 'inspire',
         title: 'Save your first recipe',
-        description: 'Import from Instagram or paste text',
+        description: 'Find recipes or save your favorites',
         icon: '✨',
         href: '/dashboard/inspire',
         priority: 30,
