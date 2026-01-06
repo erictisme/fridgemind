@@ -419,6 +419,7 @@ export default function HistoryPage() {
               added_at: new Date(),
             })
             setInventorySuccess(`Added ${data.inserted} items to inventory`)
+            setTimeout(() => setInventorySuccess(null), 3000)
             setAddingToInventory(false)
             // Clear the parsed receipt UI
             setLastParsedReceipt(null)
@@ -462,6 +463,7 @@ export default function HistoryPage() {
       if (res.ok) {
         console.log('[groceries] Undo successful:', data)
         setInventorySuccess(`Removed ${data.deleted} items from inventory`)
+        setTimeout(() => setInventorySuccess(null), 3000)
         setUndoInfo(null)
         // Refresh data
         await fetchData()

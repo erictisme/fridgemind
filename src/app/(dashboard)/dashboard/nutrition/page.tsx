@@ -121,14 +121,23 @@ export default function NutritionPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-4 sm:space-y-6 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nutrition</h1>
+      {/* Header with Actions */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nutrition</h1>
+          <Link
+            href="/dashboard/history"
+            className="text-sm text-gray-500 hover:text-emerald-600"
+          >
+            View History
+          </Link>
+        </div>
         <Link
           href="/dashboard/log-meal"
-          className="px-3 sm:px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium text-sm whitespace-nowrap"
+          className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium text-base shadow-sm"
         >
-          + Log Meal
+          <span className="text-lg">🍽️</span>
+          Log a Meal
         </Link>
       </div>
 

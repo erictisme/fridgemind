@@ -29,7 +29,16 @@ export interface ParsedReceipt {
 
 const RECEIPT_PARSER_PROMPT = `You are a receipt parser specializing in Singapore supermarket receipts, especially FairPrice (NTUC FairPrice).
 
-Analyze the provided receipt image/PDF and extract all information.
+FIRST: Determine if this image/PDF is actually a receipt. A valid receipt should have:
+- Store/merchant name
+- List of purchased items with prices
+- Total amount
+- Date (usually)
+
+If this is NOT a receipt (e.g., random photo, document, screenshot, meme, etc.), respond with ONLY:
+{"is_receipt": false, "error": "This doesn't appear to be a receipt. Please upload a photo or PDF of your grocery receipt."}
+
+If this IS a receipt, proceed to extract all information.
 
 IMPORTANT FOR FAIRPRICE RECEIPTS:
 - Store name is usually "NTUC FAIRPRICE" or similar
@@ -129,6 +138,11 @@ export async function parseReceiptPDF(pdfBase64: string): Promise<ParsedReceipt>
 
     const parsed = JSON.parse(jsonMatch[0])
 
+    // Check if this is not a receipt
+    if (parsed.is_receipt === false) {
+      throw new Error(parsed.error || 'This doesn\'t appear to be a receipt. Please upload a photo or PDF of your grocery receipt.')
+    }
+
     // Validate required fields
     if (!parsed.total || !parsed.items) {
       throw new Error('Missing required fields: total or items')
@@ -188,6 +202,11 @@ export async function parseReceiptImage(imageBase64: string): Promise<ParsedRece
     }
 
     const parsed = JSON.parse(jsonMatch[0])
+
+    // Check if this is not a receipt
+    if (parsed.is_receipt === false) {
+      throw new Error(parsed.error || 'This doesn\'t appear to be a receipt. Please upload a photo or PDF of your grocery receipt.')
+    }
 
     if (!parsed.total || !parsed.items) {
       throw new Error('Missing required fields: total or items')

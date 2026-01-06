@@ -60,7 +60,7 @@ const getFoodEmoji = (name: string, type: string): string => {
 }
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry'] as const
-const UNITS = ['pc', 'g', 'kg', 'ml', 'L', 'pack', 'bunch', 'bag', 'bottle', 'carton', 'can'] as const
+const UNITS = ['pc', 'pack', 'serving', 'bunch', 'bottle', 'g', 'kg'] as const
 const TYPES = ['protein', 'carbs', 'fibre', 'misc'] as const
 
 const getDefaultExpiryDays = (type: string, location: string): number => {
@@ -440,14 +440,15 @@ export default function InventoryPage() {
                         </div>
                       ) : (
                         <>
-                          <div className="flex items-baseline gap-2">
+                          <div className="flex items-baseline gap-2 flex-wrap">
                             <span
-                              className={`font-medium text-gray-900 truncate ${isExpired ? 'line-through' : ''} hidden sm:inline cursor-pointer`}
+                              className={`font-medium text-gray-900 ${isExpired ? 'line-through' : ''} hidden sm:inline cursor-pointer hover:text-emerald-600`}
                               onClick={(e) => { e.stopPropagation(); setEditingId(item.id); setEditingItem({...item}) }}
+                              title={item.name}
                             >
                               {item.name}
                             </span>
-                            <span className={`font-medium text-gray-900 truncate ${isExpired ? 'line-through' : ''} sm:hidden`}>
+                            <span className={`font-medium text-gray-900 ${isExpired ? 'line-through' : ''} sm:hidden`}>
                               {item.name}
                             </span>
                             <span className="text-sm text-gray-400 flex-shrink-0">{item.quantity} {item.unit}</span>
