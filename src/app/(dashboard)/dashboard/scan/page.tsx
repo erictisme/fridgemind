@@ -377,6 +377,7 @@ export default function ScanPage() {
       const result = await response.json()
       setSaveResult(result)
       setStep('success')
+      setSaving(false)
     } catch (err) {
       console.error('Save error:', err)
       setError('Failed to save items. Please try again.')

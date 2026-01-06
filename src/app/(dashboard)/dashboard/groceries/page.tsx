@@ -1120,7 +1120,6 @@ export default function HistoryPage() {
                     type="file"
                     accept=".pdf,image/*"
                     multiple
-                    capture="environment"
                     onChange={(e) => handleFileUpload(e.target.files)}
                     className="hidden"
                     id="file-upload"

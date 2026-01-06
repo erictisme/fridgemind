@@ -99,6 +99,7 @@ export default function InventoryPage() {
   const [extendingId, setExtendingId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null) // Mobile: tap to expand actions
 
   // Add form state
   const [newName, setNewName] = useState('')
@@ -363,7 +364,8 @@ export default function InventoryPage() {
               <option value="name">Sort: A-Z</option>
               <option value="location">Sort: Location</option>
             </select>
-            {/* Legend for action buttons */}
+            {/* Legend - mobile hint vs desktop legend */}
+            <span className="sm:hidden text-xs text-gray-400">Tap item for actions</span>
             <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
               <span className="flex items-center gap-1"><span className="text-emerald-600">✓</span> Ate it</span>
               <span className="flex items-center gap-1"><span className="text-orange-600">🗑</span> Went bad</span>
@@ -387,93 +389,124 @@ export default function InventoryPage() {
               const isExpired = status.days <= 0
               const isExtending = extendingId === item.id
               const isEditing = editingId === item.id
+              const isExpanded = expandedId === item.id
 
               return (
-                <div key={item.id} className={`flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${isExpired ? 'opacity-60' : ''}`}>
-                  {/* Checkbox */}
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(item.id)}
-                    onChange={() => setSelectedIds(prev => {
-                      const next = new Set(prev)
-                      if (next.has(item.id)) next.delete(item.id)
-                      else next.add(item.id)
-                      return next
-                    })}
-                    className="w-4 h-4 rounded border-gray-300 text-emerald-600"
-                  />
+                <div key={item.id} className={`${isExpired ? 'opacity-60' : ''}`}>
+                  {/* Main row */}
+                  <div
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer sm:cursor-default"
+                    onClick={() => {
+                      // Mobile: toggle expand (only if not editing)
+                      if (window.innerWidth < 640 && !isEditing) {
+                        setExpandedId(isExpanded ? null : item.id)
+                      }
+                    }}
+                  >
+                    {/* Checkbox - hidden on mobile when not expanded */}
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(item.id)) next.delete(item.id)
+                          else next.add(item.id)
+                          return next
+                        })
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded border-gray-300 text-emerald-600 hidden sm:block"
+                    />
 
-                  {/* Status dot */}
-                  <div className={`w-2 h-2 rounded-full ${status.dot}`} />
+                    {/* Status dot */}
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status.dot}`} />
 
-                  {/* Emoji */}
-                  <span className="text-lg">{emoji}</span>
+                    {/* Emoji */}
+                    <span className="text-lg flex-shrink-0">{emoji}</span>
 
-                  {/* Name & details */}
-                  <div className="flex-1 min-w-0">
-                    {isEditing && editingItem ? (
-                      <div className="flex gap-2 items-center">
-                        <input type="text" value={editingItem.name} onChange={e => setEditingItem({...editingItem, name: e.target.value})} className="px-2 py-1 border rounded text-sm flex-1 min-w-0" />
-                        <input type="number" value={editingItem.quantity} onChange={e => setEditingItem({...editingItem, quantity: parseFloat(e.target.value) || 0})} className="px-2 py-1 border rounded text-sm w-16" />
-                        <select value={editingItem.location} onChange={e => setEditingItem({...editingItem, location: e.target.value})} className="px-2 py-1 border rounded text-sm">
-                          {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                        </select>
-                        <button onClick={handleSaveEdit} className="px-2 py-1 bg-blue-600 text-white rounded text-xs">Save</button>
-                        <button onClick={() => { setEditingId(null); setEditingItem(null) }} className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs">Cancel</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-baseline gap-2 cursor-pointer" onClick={() => { setEditingId(item.id); setEditingItem({...item}) }}>
-                        <span className={`font-medium text-gray-900 truncate ${isExpired ? 'line-through' : ''}`}>{item.name}</span>
-                        <span className="text-sm text-gray-400">{item.quantity} {item.unit}</span>
-                      </div>
-                    )}
-                    {!isEditing && <div className="text-xs text-gray-500">{item.location.charAt(0).toUpperCase() + item.location.slice(1)} · {new Date(item.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>}
+                    {/* Name & details */}
+                    <div className="flex-1 min-w-0">
+                      {isEditing && editingItem ? (
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <input type="text" value={editingItem.name} onChange={e => setEditingItem({...editingItem, name: e.target.value})} onClick={e => e.stopPropagation()} className="px-2 py-1 border rounded text-sm flex-1 min-w-0" />
+                          <input type="number" value={editingItem.quantity} onChange={e => setEditingItem({...editingItem, quantity: parseFloat(e.target.value) || 0})} onClick={e => e.stopPropagation()} className="px-2 py-1 border rounded text-sm w-16" />
+                          <select value={editingItem.location} onChange={e => setEditingItem({...editingItem, location: e.target.value})} onClick={e => e.stopPropagation()} className="px-2 py-1 border rounded text-sm">
+                            {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                          <button onClick={(e) => { e.stopPropagation(); handleSaveEdit() }} className="px-2 py-1 bg-blue-600 text-white rounded text-xs">Save</button>
+                          <button onClick={(e) => { e.stopPropagation(); setEditingId(null); setEditingItem(null) }} className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs">Cancel</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <span
+                              className={`font-medium text-gray-900 truncate ${isExpired ? 'line-through' : ''} hidden sm:inline cursor-pointer`}
+                              onClick={(e) => { e.stopPropagation(); setEditingId(item.id); setEditingItem({...item}) }}
+                            >
+                              {item.name}
+                            </span>
+                            <span className={`font-medium text-gray-900 truncate ${isExpired ? 'line-through' : ''} sm:hidden`}>
+                              {item.name}
+                            </span>
+                            <span className="text-sm text-gray-400 flex-shrink-0">{item.quantity} {item.unit}</span>
+                          </div>
+                          <div className="text-xs text-gray-500">{item.location.charAt(0).toUpperCase() + item.location.slice(1)} · {new Date(item.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Badge */}
+                    <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium flex-shrink-0 ${status.color}`}>{status.label}</span>
+
+                    {/* Mobile: Chevron indicator */}
+                    <span className="sm:hidden text-gray-400 text-sm flex-shrink-0">{isExpanded ? '▼' : '›'}</span>
+
+                    {/* Desktop: Actions inline */}
+                    <div className="hidden sm:flex items-center gap-1">
+                      {isExtending ? (
+                        <>
+                          {[3, 5, 7].map(d => (
+                            <button key={d} onClick={(e) => { e.stopPropagation(); handleExtend(item.id, d) }} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">+{d}d</button>
+                          ))}
+                          <button onClick={(e) => { e.stopPropagation(); setExtendingId(null) }} className="px-1.5 py-1 text-xs text-gray-500 hover:text-gray-700">✕</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); handleRemove(item.id, 'consumed') }} disabled={saving === item.id} title="Ate it" className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:opacity-50">✓</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleRemove(item.id, 'wasted') }} disabled={saving === item.id} title="Went bad" className="p-1.5 text-orange-600 hover:bg-orange-50 rounded disabled:opacity-50">🗑</button>
+                          <button onClick={(e) => { e.stopPropagation(); setExtendingId(item.id) }} disabled={saving === item.id} title="Extend expiry" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50">+</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleRemove(item.id, 'wrong_entry') }} disabled={saving === item.id} title="Wrong entry" className="p-1.5 text-gray-400 hover:bg-gray-100 rounded disabled:opacity-50">✕</button>
+                        </>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Badge */}
-                  <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${status.color}`}>{status.label}</span>
-
-                  {/* Actions */}
-                  {isExtending ? (
-                    <div className="flex items-center gap-1">
-                      {[3, 5, 7].map(d => (
-                        <button key={d} onClick={() => handleExtend(item.id, d)} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">+{d}d</button>
-                      ))}
-                      <button onClick={() => setExtendingId(null)} className="px-1.5 py-1 text-xs text-gray-500 hover:text-gray-700">✕</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
+                  {/* Mobile: Expanded actions */}
+                  {isExpanded && (
+                    <div className="sm:hidden px-4 pb-3 pt-1 bg-gray-50 border-t border-gray-100">
+                      {isExtending ? (
+                        <div className="flex items-center gap-2 justify-center">
+                          {[3, 5, 7].map(d => (
+                            <button key={d} onClick={() => handleExtend(item.id, d)} className="px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium">+{d}d</button>
+                          ))}
+                          <button onClick={() => setExtendingId(null)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 justify-between">
+                          <button onClick={() => handleRemove(item.id, 'consumed')} disabled={saving === item.id} className="flex-1 py-2 px-3 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-50">✓ Ate</button>
+                          <button onClick={() => handleRemove(item.id, 'wasted')} disabled={saving === item.id} className="flex-1 py-2 px-3 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium disabled:opacity-50">🗑 Bad</button>
+                          <button onClick={() => setExtendingId(item.id)} disabled={saving === item.id} className="flex-1 py-2 px-3 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium disabled:opacity-50">+ Extend</button>
+                          <button onClick={() => handleRemove(item.id, 'wrong_entry')} disabled={saving === item.id} className="py-2 px-3 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium disabled:opacity-50">✕</button>
+                        </div>
+                      )}
+                      {/* Edit button on mobile */}
                       <button
-                        onClick={() => handleRemove(item.id, 'consumed')}
-                        disabled={saving === item.id}
-                        title="Ate it"
-                        className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:opacity-50"
+                        onClick={() => { setEditingId(item.id); setEditingItem({...item}); setExpandedId(null) }}
+                        className="w-full mt-2 py-2 text-sm text-gray-500 hover:text-gray-700"
                       >
-                        ✓
-                      </button>
-                      <button
-                        onClick={() => handleRemove(item.id, 'wasted')}
-                        disabled={saving === item.id}
-                        title="Went bad"
-                        className="p-1.5 text-orange-600 hover:bg-orange-50 rounded disabled:opacity-50"
-                      >
-                        🗑
-                      </button>
-                      <button
-                        onClick={() => setExtendingId(item.id)}
-                        disabled={saving === item.id}
-                        title="Extend expiry"
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
-                      >
-                        +
-                      </button>
-                      <button
-                        onClick={() => handleRemove(item.id, 'wrong_entry')}
-                        disabled={saving === item.id}
-                        title="Wrong entry"
-                        className="p-1.5 text-gray-400 hover:bg-gray-100 rounded disabled:opacity-50"
-                      >
-                        ✕
+                        Edit item
                       </button>
                     </div>
                   )}
