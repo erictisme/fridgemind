@@ -159,6 +159,47 @@ async function searchRecipes(ingredients: string[]): Promise<RecipeSearchResult[
   }
 }
 
+// Generate AI recipes as fallback when no real recipes found
+async function generateAIRecipes(ingredients: string[]): Promise<RecipeSearchResult[]> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+  const prompt = `Given these ingredients: ${ingredients.join(', ')}
+
+Generate 3 simple, practical recipe ideas. Use common cooking techniques and don't require unusual ingredients.
+
+Return ONLY a JSON array with this structure:
+[
+  {
+    "name": "Simple recipe name in lowercase",
+    "description": "One sentence description",
+    "ingredients_needed": ["ingredient1", "ingredient2"]
+  }
+]
+
+Keep names simple and natural (e.g., "garlic butter chicken" not "Garlic Butter Chicken Delight").`
+
+  try {
+    const result = await model.generateContent(prompt)
+    const text = result.response.text()
+
+    const match = text.match(/\[[\s\S]*\]/)
+    if (!match) return []
+
+    const parsed = JSON.parse(match[0])
+
+    return parsed.map((r: { name: string; description: string; ingredients_needed: string[] }) => ({
+      name: r.name,
+      description: r.description,
+      source_url: '',
+      source_type: 'website' as const,
+      source_name: 'AI suggestion',
+      ingredients_preview: r.ingredients_needed?.slice(0, 4) || ingredients.slice(0, 4),
+    }))
+  } catch {
+    return []
+  }
+}
+
 // Fallback: Ask LLM for recipe name suggestions, then search
 async function getRecipeSuggestions(ingredients: string[]): Promise<string[]> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
@@ -276,10 +317,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Step 4: If still no recipes, generate AI suggestions as last resort
+    if (recipes.length === 0) {
+      const aiRecipes = await generateAIRecipes(ingredients)
+      return NextResponse.json({
+        success: true,
+        detected_ingredients: ingredients,
+        recipes: aiRecipes,
+        source: 'ai_generated',
+        note: 'No real recipes found online. These are AI-generated suggestions based on your ingredients.',
+      })
+    }
+
     return NextResponse.json({
       success: true,
       detected_ingredients: ingredients,
       recipes: recipes.slice(0, 8),
+      source: 'web_search',
     })
   } catch (error) {
     console.error('Photo to recipe error:', error)
