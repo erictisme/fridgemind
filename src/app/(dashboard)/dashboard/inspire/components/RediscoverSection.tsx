@@ -29,7 +29,7 @@ export default function RediscoverSection({
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">💡</span>
-        <h3 className="font-medium text-gray-900">Haven&apos;t made in a while</h3>
+        <h3 className="font-medium text-gray-900">Past recipes</h3>
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2 snap-x snap-mandatory">

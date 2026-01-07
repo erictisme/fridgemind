@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { trackNutritionViewed, trackNutritionInsightsViewed } from '@/lib/analytics'
 
 interface DailySummary {
   date: string
@@ -60,6 +61,7 @@ export default function NutritionPage() {
   const [summary, setSummary] = useState<NutritionSummary | null>(null)
   const [insights, setInsights] = useState<NutritionInsight[]>([])
   const [loading, setLoading] = useState(true)
+  const hasTrackedView = useRef(false)
 
   useEffect(() => {
     fetchData()
@@ -76,11 +78,26 @@ export default function NutritionPage() {
       if (summaryRes.ok) {
         const data = await summaryRes.json()
         setSummary(data)
+
+        // Track nutrition page view (only once per session)
+        if (!hasTrackedView.current) {
+          trackNutritionViewed({
+            period,
+            hasMealsLogged: data.totals?.meals_logged > 0,
+            mealsCount: data.totals?.meals_logged || 0,
+          })
+          hasTrackedView.current = true
+        }
       }
 
       if (insightsRes.ok) {
         const data = await insightsRes.json()
         setInsights(data.insights || [])
+
+        // Track if user has insights to view
+        if (data.insights?.length > 0 && !hasTrackedView.current) {
+          trackNutritionInsightsViewed()
+        }
       }
     } catch (error) {
       console.error('Failed to fetch nutrition data:', error)

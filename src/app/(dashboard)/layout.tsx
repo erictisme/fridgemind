@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Navigation */}
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -26,7 +26,7 @@ export default async function DashboardLayout({
               </Link>
               <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
                 <NavLink href="/dashboard">Home</NavLink>
-                <NavLink href="/dashboard/inspire">Inspire</NavLink>
+                <NavLink href="/dashboard/inspire">Recipes</NavLink>
                 <NavLink href="/dashboard/shopping-list">Shop</NavLink>
                 <NavLink href="/dashboard/inventory">Inventory</NavLink>
                 <NavLink href="/dashboard/nutrition">Nutrition</NavLink>
@@ -45,7 +45,7 @@ export default async function DashboardLayout({
       <div className="sm:hidden bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex space-x-2 overflow-x-auto">
           <MobileNavLink href="/dashboard">Home</MobileNavLink>
-          <MobileNavLink href="/dashboard/inspire">Inspire</MobileNavLink>
+          <MobileNavLink href="/dashboard/inspire">Recipes</MobileNavLink>
           <MobileNavLink href="/dashboard/shopping-list">Shop</MobileNavLink>
           <MobileNavLink href="/dashboard/inventory">Inventory</MobileNavLink>
           <MobileNavLink href="/dashboard/nutrition">Nutrition</MobileNavLink>

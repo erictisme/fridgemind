@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import RecipeSearchSection, { RecipeSearchResult } from './components/RecipeSearchSection'
 import SavedRecipesSection, { SavedRecipe } from './components/SavedRecipesSection'
+import { trackFeatureUsed, trackRecipeSearched, trackSuggestionViewed } from '@/lib/analytics'
 
 interface RecipeIngredient {
   name: string
@@ -185,6 +186,9 @@ export default function InspirePage() {
   useEffect(() => {
     fetchRecipes()
     loadMealPlan()
+
+    // Track recipe page view
+    trackFeatureUsed({ feature: 'recipes', action: 'viewed' })
 
     // Check URL params for auto-opening ingredient picker
     const openPicker = searchParams.get('picker') === 'true'
@@ -853,7 +857,7 @@ export default function InspirePage() {
         <Link href="/dashboard" className="text-gray-500 hover:text-gray-700 text-sm">
           &larr; Home
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 mt-1">Inspire</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mt-1">Recipes</h1>
         <p className="text-gray-500">Save recipes and plan your meals</p>
       </div>
 
@@ -955,10 +959,10 @@ export default function InspirePage() {
               <span className="font-medium text-gray-900 text-sm">Paste Text</span>
               <p className="text-xs text-gray-500 mt-1">Copy/paste recipe</p>
             </button>
-            <label className="p-4 bg-white rounded-xl border-2 border-orange-100 hover:border-orange-300 transition-colors text-left cursor-pointer col-span-2 sm:col-span-1">
+            <label className="p-4 bg-white rounded-xl border-2 border-orange-100 hover:border-orange-300 transition-colors text-left cursor-pointer">
               <span className="text-2xl mb-2 block">🥕</span>
               <span className="font-medium text-gray-900 text-sm">Snap Ingredients</span>
-              <p className="text-xs text-gray-500 mt-1">Photo of food → find real recipes</p>
+              <p className="text-xs text-gray-500 mt-1">Photo → recipes</p>
               <input
                 type="file"
                 accept="image/*"

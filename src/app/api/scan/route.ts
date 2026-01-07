@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeImagesWithInventory } from '@/lib/gemini/vision'
+import { checkRateLimit, RATE_LIMITS, formatTimeUntilReset } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,6 +10,17 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check rate limit before expensive AI call
+    const rateLimit = await checkRateLimit(user.id, 'scan')
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        error: 'rate_limit_exceeded',
+        message: `You've reached the daily scan limit (${RATE_LIMITS.scan} scans). Try again in ${formatTimeUntilReset(rateLimit.resetAt)}.`,
+        remaining: 0,
+        resetAt: rateLimit.resetAt.toISOString(),
+      }, { status: 429 })
     }
 
     const body = await request.json()

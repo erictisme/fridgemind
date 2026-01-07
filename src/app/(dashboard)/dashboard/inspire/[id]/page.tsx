@@ -346,7 +346,7 @@ export default function RecipeDetailPage() {
           href="/dashboard/inspire"
           className="text-emerald-600 hover:text-emerald-700 font-medium"
         >
-          ← Back to Inspire
+          ← Back to Recipes
         </Link>
       </div>
     )
@@ -709,7 +709,7 @@ export default function RecipeDetailPage() {
         href="/dashboard/inspire"
         className="text-gray-500 hover:text-gray-700 text-sm mb-4 inline-block"
       >
-        ← Back to Inspire
+        ← Back to Recipes
       </Link>
 
       {/* Header */}

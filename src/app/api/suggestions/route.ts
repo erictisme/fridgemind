@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateMealSuggestions } from '@/lib/gemini/vision'
+import { checkRateLimit, RATE_LIMITS, formatTimeUntilReset } from '@/lib/rate-limit'
 
 interface Staple {
   name: string
@@ -16,6 +17,17 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check rate limit before expensive AI generation
+    const rateLimit = await checkRateLimit(user.id, 'recipe_generate')
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        error: 'rate_limit_exceeded',
+        message: `You've reached the daily recipe generation limit (${RATE_LIMITS.recipe_generate} generations). Try again in ${formatTimeUntilReset(rateLimit.resetAt)}.`,
+        remaining: 0,
+        resetAt: rateLimit.resetAt.toISOString(),
+      }, { status: 429 })
     }
 
     const body = await request.json()

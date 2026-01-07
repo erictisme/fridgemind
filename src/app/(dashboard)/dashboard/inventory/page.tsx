@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { trackItemAdded, trackItemConsumed, trackBulkItemsConsumed, trackExpiryExtended, trackFoodWasteEvent } from '@/lib/analytics'
 
 interface InventoryItem {
   id: string
@@ -132,6 +133,13 @@ export default function InventoryPage() {
     const item = items.find(i => i.id === id)
     if (!item) return
     setSaving(id)
+
+    // Calculate days until expiry for analytics
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const expiry = new Date(item.expiry_date)
+    const daysUntilExpiry = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
     try {
       const res = await fetch('/api/inventory', {
         method: 'DELETE',
@@ -141,6 +149,25 @@ export default function InventoryPage() {
       if (!res.ok) throw new Error('Failed')
       setItems(prev => prev.filter(i => i.id !== id))
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next })
+
+      // Track item consumption with expiry context
+      trackItemConsumed({
+        itemName: item.name,
+        reason,
+        daysUntilExpiry,
+        wasExpiringSoon: daysUntilExpiry <= 3 && daysUntilExpiry > 0,
+        wasExpired: daysUntilExpiry <= 0,
+      })
+
+      // Also track for food waste metrics
+      if (reason === 'consumed' || reason === 'wasted') {
+        trackFoodWasteEvent({
+          eventType: reason,
+          itemName: item.name,
+          daysUntilExpiry,
+          quantity: item.quantity,
+        })
+      }
     } catch { setError('Failed to remove item') }
     finally { setSaving(null) }
   }
@@ -150,6 +177,13 @@ export default function InventoryPage() {
     if (!item) return
     setSaving(id)
     setExtendingId(null)
+
+    // Calculate previous days until expiry
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const oldExpiry = new Date(item.expiry_date)
+    const previousDaysUntilExpiry = Math.ceil((oldExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
     try {
       const newDate = new Date()
       newDate.setDate(newDate.getDate() + days)
@@ -161,6 +195,13 @@ export default function InventoryPage() {
       })
       if (!res.ok) throw new Error('Failed')
       setItems(prev => prev.map(i => i.id === id ? { ...i, expiry_date: newExpiry } : i))
+
+      // Track expiry extension
+      trackExpiryExtended({
+        itemName: item.name,
+        daysExtended: days,
+        previousDaysUntilExpiry,
+      })
     } catch { setError('Failed to extend') }
     finally { setSaving(null) }
   }
@@ -184,6 +225,15 @@ export default function InventoryPage() {
       if (!res.ok) throw new Error('Failed')
       await fetchInventory()
       setShowAddForm(false)
+
+      // Track manual item addition
+      trackItemAdded({
+        method: 'manual',
+        itemName: newName,
+        location: newLocation,
+        quantity: newQty,
+      })
+
       setNewName('')
       setNewQty(1)
     } catch { setError('Failed to add') }
@@ -209,9 +259,33 @@ export default function InventoryPage() {
 
   const handleBulkDelete = async (reason: 'consumed' | 'wasted') => {
     if (selectedIds.size === 0) return
+
+    // Calculate expiry stats before deletion for bulk tracking
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const selectedItems = items.filter(i => selectedIds.has(i.id))
+    let expiringSoonCount = 0
+    let expiredCount = 0
+
+    for (const item of selectedItems) {
+      const expiry = new Date(item.expiry_date)
+      const daysUntilExpiry = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      if (daysUntilExpiry <= 0) expiredCount++
+      else if (daysUntilExpiry <= 3) expiringSoonCount++
+    }
+
     for (const id of selectedIds) {
       await handleRemove(id, reason)
     }
+
+    // Track bulk action summary
+    trackBulkItemsConsumed({
+      count: selectedIds.size,
+      reason,
+      expiringSoonCount,
+      expiredCount,
+    })
+
     setSelectedIds(new Set())
   }
 
@@ -251,6 +325,17 @@ export default function InventoryPage() {
       })
       if (!res.ok) throw new Error('Failed')
       await fetchInventory()
+
+      // Track paste additions
+      for (const item of selected) {
+        trackItemAdded({
+          method: 'paste',
+          itemName: item.name,
+          location: pasteLocation,
+          quantity: item.quantity,
+        })
+      }
+
       setShowPasteModal(false)
       setPasteText('')
       setParsedItems([])

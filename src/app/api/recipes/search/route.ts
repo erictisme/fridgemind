@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkBothLimits, RATE_LIMITS, formatTimeUntilReset } from '@/lib/rate-limit'
 
 // Decode HTML entities like &#39; -> '
 function decodeHtmlEntities(text: string): string {
@@ -726,13 +727,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Check rate limit (includes global limit for YouTube API protection)
+    const rateLimit = await checkBothLimits(user.id, 'recipe_search')
+    if (!rateLimit.allowed) {
+      const message = rateLimit.globalLimitHit
+        ? `Recipe search is temporarily unavailable due to high demand. Try again in ${formatTimeUntilReset(rateLimit.resetAt)}.`
+        : `You've reached the daily search limit (${RATE_LIMITS.recipe_search} searches). Try again in ${formatTimeUntilReset(rateLimit.resetAt)}.`
+
+      return NextResponse.json({
+        error: 'rate_limit_exceeded',
+        message,
+        remaining: 0,
+        resetAt: rateLimit.resetAt.toISOString(),
+      }, { status: 429 })
+    }
+
     const body = await request.json() as SearchRequestBody
     const { query, ingredients, limit = 6, sources } = body
 
-    // Default sources if not provided
+    // Default sources if not provided (YouTube disabled by default to save API quota)
     const sourceToggles: SourceToggles = sources || {
       web: true,
-      youtube: true,
+      youtube: false,
       instagram: false,
     }
 

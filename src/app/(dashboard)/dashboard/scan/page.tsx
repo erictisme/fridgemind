@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { trackScanStarted, trackScanCompleted, trackScanFailed, trackScanSaved } from '@/lib/analytics'
 
 type Location = 'fridge' | 'freezer' | 'pantry'
 
@@ -188,6 +189,7 @@ export default function ScanPage() {
 
     setError(null)
     setStep('processing')
+    trackScanStarted(location)
 
     try {
       // Step 1: Analyze images with AI
@@ -205,8 +207,10 @@ export default function ScanPage() {
 
       // Check if images were invalid (not food storage)
       if (scanData.error === 'invalid_image') {
-        setError(scanData.message || 'This doesn\'t appear to be a photo of food storage. Please take a photo of your fridge, freezer, or pantry contents.')
+        const errorMsg = scanData.message || 'This doesn\'t appear to be a photo of food storage. Please take a photo of your fridge, freezer, or pantry contents.'
+        setError(errorMsg)
         setStep('capture')
+        trackScanFailed({ location, error: errorMsg, errorType: 'invalid_image' })
         return
       }
 
@@ -263,10 +267,21 @@ export default function ScanPage() {
       const mergedItems = [...detectedWithIds, ...undetectedItems]
       setDetectedItems(mergedItems)
       setStep('review')
+
+      // Track successful scan
+      const selectedCount = mergedItems.filter(i => i.selected).length
+      trackScanCompleted({
+        location,
+        itemsDetected: scanData.items.length,
+        itemsSelected: selectedCount,
+        scanMode,
+      })
     } catch (err) {
       console.error('Analysis error:', err)
-      setError('Failed to analyze images. Please try again.')
+      const errorMsg = 'Failed to analyze images. Please try again.'
+      setError(errorMsg)
       setStep('capture')
+      trackScanFailed({ location, error: errorMsg, errorType: 'api_error' })
     }
   }
 
@@ -386,6 +401,14 @@ export default function ScanPage() {
       setSaveResult(result)
       setStep('success')
       setSaving(false)
+
+      // Track successful save
+      trackScanSaved({
+        location,
+        itemsInserted: result.inserted || 0,
+        itemsUpdated: result.updated || 0,
+        itemsDeleted: result.deleted || 0,
+      })
     } catch (err) {
       console.error('Save error:', err)
       setError('Failed to save items. Please try again.')

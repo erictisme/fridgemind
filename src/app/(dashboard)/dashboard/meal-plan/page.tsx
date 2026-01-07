@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { trackFeatureUsed, trackMealPlanCreated, trackMealPlanUpdated } from '@/lib/analytics'
 
 interface MealPlan {
   id?: string
@@ -68,6 +69,7 @@ export default function MealPlanPage() {
 
   useEffect(() => {
     fetchMealPlan()
+    trackFeatureUsed({ feature: 'meal_plan', action: 'viewed' })
   }, [])
 
   const fetchMealPlan = async () => {
@@ -108,6 +110,18 @@ export default function MealPlanPage() {
       const data = await response.json()
       setMealPlan(data.mealPlan)
       setSuccessMessage('Meal plan saved successfully!')
+
+      // Track meal plan save
+      if (method === 'POST') {
+        trackMealPlanCreated({
+          weekStart: mealPlan.week_start,
+          breakfastsPlanned: mealPlan.breakfasts_home,
+          lunchesPlanned: mealPlan.lunches_home,
+          dinnersPlanned: mealPlan.dinners_home,
+        })
+      } else {
+        trackMealPlanUpdated()
+      }
 
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(null), 3000)
