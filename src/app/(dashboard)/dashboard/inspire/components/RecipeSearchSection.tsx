@@ -64,7 +64,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
   const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set())
   const [sources, setSources] = useState<SourceToggles>({
     web: true,
-    youtube: true,
+    youtube: false, // Off by default - limited API quota
     instagram: false, // Off by default - requires more setup
   })
   const [searchedSources, setSearchedSources] = useState<string[]>([])
@@ -221,7 +221,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
             <span>🌐</span> Web
           </span>
         </label>
-        <label className="flex items-center gap-1.5 cursor-pointer group">
+        <label className="flex items-center gap-1.5 cursor-pointer group opacity-60" title="Coming soon - limited quota">
           <input
             type="checkbox"
             checked={sources.youtube}
@@ -230,10 +230,12 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
               setSources(newSources)
               if (query.trim()) handleSearch(query, newSources)
             }}
+            disabled
             className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
           />
-          <span className="text-sm text-gray-700 group-hover:text-red-600 flex items-center gap-1">
+          <span className="text-sm text-gray-700 flex items-center gap-1">
             <span>🎬</span> YouTube
+            <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded-full">Soon</span>
           </span>
         </label>
         <label className="flex items-center gap-1.5 cursor-pointer group opacity-60" title="Coming soon">
@@ -263,7 +265,7 @@ export default function RecipeSearchSection({ onSaveRecipe }: RecipeSearchSectio
             <button
               key={term}
               onClick={() => handleQuickSearch(term)}
-              className="px-3 py-1 text-sm bg-white rounded-full border border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+              className="px-4 py-1.5 text-sm bg-white rounded-full border border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300 transition-colors whitespace-nowrap"
             >
               {term}
             </button>

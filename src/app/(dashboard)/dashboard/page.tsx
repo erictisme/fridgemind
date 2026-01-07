@@ -320,13 +320,14 @@ export default function DashboardPage() {
       {primary_action && (
         <Link href={primary_action.href} className="block">
           <div className={`bg-gradient-to-r ${ACTION_COLORS[primary_action.type].bg} rounded-2xl p-6 border border-gray-100 hover:shadow-lg transition-shadow`}>
-            <div className="flex items-start gap-4">
-              <div className={`w-14 h-14 ${ACTION_COLORS[primary_action.type].icon} rounded-2xl flex items-center justify-center text-2xl flex-shrink-0`}>
-                {primary_action.icon}
-              </div>
-              <div className="flex-1">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-3 mb-2">
                 <h2 className="text-xl font-bold text-gray-900">{primary_action.title}</h2>
-                <p className="text-gray-600 mt-1">{primary_action.description}</p>
+                <div className={`w-10 h-10 ${ACTION_COLORS[primary_action.type].icon} rounded-xl flex items-center justify-center text-xl flex-shrink-0`}>
+                  {primary_action.icon}
+                </div>
+              </div>
+              <p className="text-gray-600">{primary_action.description}</p>
 
                 {/* Expiring items preview */}
                 {primary_action.type === 'use_soon' && primary_action.data?.items && (
@@ -373,12 +374,11 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                <div className={`mt-4 inline-flex items-center px-4 py-2 ${ACTION_COLORS[primary_action.type].button} text-white rounded-xl font-medium`}>
-                  {primary_action.type === 'use_soon' ? 'Get meal ideas' : primary_action.type === 'cook' ? 'What to cook?' : 'Go'}
-                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
+              <div className={`mt-4 inline-flex items-center px-4 py-2 ${ACTION_COLORS[primary_action.type].button} text-white rounded-xl font-medium`}>
+                {primary_action.type === 'use_soon' ? 'Get meal ideas' : primary_action.type === 'cook' ? 'What to cook?' : 'Go'}
+                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </div>
             </div>
           </div>
