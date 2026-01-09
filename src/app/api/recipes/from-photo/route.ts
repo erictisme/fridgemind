@@ -91,7 +91,7 @@ async function searchRecipes(ingredients: string[]): Promise<RecipeSearchResult[
 
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; FridgeClue/1.0)',
       },
     })
 
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
         try {
           const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
           const response = await fetch(searchUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0)' },
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FridgeClue/1.0)' },
           })
 
           if (response.ok) {

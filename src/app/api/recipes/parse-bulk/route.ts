@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       try {
         const response = await fetch(url, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0)',
+            'User-Agent': 'Mozilla/5.0 (compatible; FridgeClue/1.0)',
           },
         })
 

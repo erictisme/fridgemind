@@ -15,7 +15,7 @@ export default async function Home() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-sm z-50 border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-emerald-600">FridgeMind</h1>
+          <h1 className="text-xl font-bold text-emerald-600">FridgeClue</h1>
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-gray-600 hover:text-emerald-600 text-sm font-medium">
               Sign in
@@ -44,7 +44,7 @@ export default async function Home() {
           </h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto mb-8">
             Scan your fridge, get recipe ideas, track nutrition, and never waste food again.
-            FridgeMind handles the mental load so you can focus on cooking.
+            FridgeClue handles the mental load so you can focus on cooking.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
@@ -174,7 +174,7 @@ export default async function Home() {
           <div className="space-y-16">
             <FeatureDetail
               title="AI that understands food"
-              description="Take a photo of anything - your fridge, a meal, ingredients on your counter, or a recipe from a cookbook. FridgeMind's AI identifies items, estimates nutrition, and extracts recipes automatically."
+              description="Take a photo of anything - your fridge, a meal, ingredients on your counter, or a recipe from a cookbook. FridgeClue's AI identifies items, estimates nutrition, and extracts recipes automatically."
               features={[
                 "Photo-based inventory scanning",
                 "Meal nutrition estimation from photos",

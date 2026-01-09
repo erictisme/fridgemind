@@ -391,7 +391,7 @@ export default function RecipeDetailPage() {
     if (!recipe) return
 
     // Load existing meal plan
-    const saved = localStorage.getItem('fridgemind_meal_plan')
+    const saved = localStorage.getItem('fridgeclue_meal_plan')
     let mealPlan: Array<{ date: string; meal: string; recipes: Array<{ recipe_id: string; recipe_name: string; servings: number; position: number }> }> = []
 
     if (saved) {
@@ -434,7 +434,7 @@ export default function RecipeDetailPage() {
       })
     }
 
-    localStorage.setItem('fridgemind_meal_plan', JSON.stringify(mealPlan))
+    localStorage.setItem('fridgeclue_meal_plan', JSON.stringify(mealPlan))
     setShowMealPlanPicker(false)
     setAddedToPlan(true)
     setTimeout(() => setAddedToPlan(false), 3000)

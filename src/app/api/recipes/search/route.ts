@@ -286,7 +286,7 @@ async function fetchRecipeFromUrl(url: string): Promise<RecipeSearchResult | nul
 
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; FridgeMind/1.0; Recipe Search)',
+        'User-Agent': 'Mozilla/5.0 (compatible; FridgeClue/1.0; Recipe Search)',
         'Accept': 'text/html',
       },
       signal: controller.signal,

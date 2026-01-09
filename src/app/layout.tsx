@@ -14,17 +14,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FridgeMind - AI Food Management",
+  title: "FridgeClue - AI Food Management",
   description: "Scan your fridge, get recipe ideas, track nutrition, and never waste food again. AI-powered kitchen assistant.",
   openGraph: {
-    title: "FridgeMind",
+    title: "FridgeClue",
     description: "Know what's in your kitchen. Cook with confidence.",
-    siteName: "FridgeMind",
+    siteName: "FridgeClue",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "FridgeMind",
+    title: "FridgeClue",
     description: "AI-powered food management. Scan, cook, track.",
   },
 };

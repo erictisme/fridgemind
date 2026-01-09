@@ -22,7 +22,7 @@ export default async function DashboardLayout({
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <Link href="/dashboard" className="text-2xl font-bold text-emerald-600">
-                FridgeMind
+                FridgeClue
               </Link>
               <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
                 <NavLink href="/dashboard">Home</NavLink>
