@@ -222,7 +222,7 @@ export default function InspirePage() {
 
   const loadMealPlan = () => {
     // Load from localStorage for now
-    const saved = localStorage.getItem('fridgeclue_meal_plan')
+    const saved = localStorage.getItem('fridgemind_meal_plan')
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
@@ -246,7 +246,7 @@ export default function InspirePage() {
         })
         setMealPlan(migrated)
         // Save migrated format back
-        localStorage.setItem('fridgeclue_meal_plan', JSON.stringify(migrated))
+        localStorage.setItem('fridgemind_meal_plan', JSON.stringify(migrated))
       } catch {
         // ignore
       }
@@ -254,7 +254,7 @@ export default function InspirePage() {
   }
 
   const saveMealPlan = (plan: MealPlan[]) => {
-    localStorage.setItem('fridgeclue_meal_plan', JSON.stringify(plan))
+    localStorage.setItem('fridgemind_meal_plan', JSON.stringify(plan))
     setMealPlan(plan)
   }
 
