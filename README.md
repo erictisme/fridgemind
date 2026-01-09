@@ -1,4 +1,4 @@
-# FridgeMind
+# FridgeClue
 
 AI-powered inventory and meal-planning assistant that eliminates household cognitive load around food.
 
@@ -6,7 +6,7 @@ AI-powered inventory and meal-planning assistant that eliminates household cogni
 
 ## Overview
 
-FridgeMind uses **photo recognition**, **predictive restocking**, and **meal-based planning** to ensure no forgotten food, overbuying, or midweek stress.
+FridgeClue uses **photo recognition**, **predictive restocking**, and **meal-based planning** to ensure no forgotten food, overbuying, or midweek stress.
 
 ### Key Features
 
@@ -36,8 +36,8 @@ FridgeMind uses **photo recognition**, **predictive restocking**, and **meal-bas
 
 ```bash
 # Clone the repository
-git clone https://github.com/erictisme/fridgemind.git
-cd fridgemind
+git clone https://github.com/erictisme/fridgeclue.git
+cd fridgeclue
 
 # Install dependencies
 pnpm install
@@ -64,7 +64,7 @@ See `.env.example` for required variables:
 
 ## Documentation
 
-- [Full PRD](./docs/FRIDGEMIND-PRD.md) - Complete product requirements document
+- [Full PRD](./docs/FRIDGECLUE-PRD.md) - Complete product requirements document
 
 ## Development
 
