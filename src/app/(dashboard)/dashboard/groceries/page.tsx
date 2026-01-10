@@ -122,14 +122,6 @@ export default function HistoryPage() {
   const [receiptText, setReceiptText] = useState('')
   const [parsingText, setParsingText] = useState(false)
 
-  // Normalization status
-  const [normStatus, setNormStatus] = useState<{
-    total: number
-    normalized: number
-    unnormalized: number
-    percent_complete: number
-  } | null>(null)
-  const [normalizing, setNormalizing] = useState(false)
 
   // Staples state
   const [staples, setStaples] = useState<Array<{
@@ -182,13 +174,6 @@ export default function HistoryPage() {
       if (analyticsRes.ok) {
         const data = await analyticsRes.json()
         setAnalytics(data)
-      }
-
-      // Check normalization status
-      const normRes = await fetch('/api/receipts/backfill-normalize')
-      if (normRes.ok) {
-        const data = await normRes.json()
-        setNormStatus(data)
       }
 
       // Fetch staples
@@ -517,47 +502,6 @@ export default function HistoryPage() {
     }
   }
 
-  const handleNormalize = async () => {
-    setNormalizing(true)
-    try {
-      // Process in batches to avoid Vercel timeout
-      let remaining = normStatus?.unnormalized || 0
-      let totalProcessed = 0
-
-      while (remaining > 0) {
-        const res = await fetch('/api/receipts/backfill-normalize?limit=50', { method: 'POST' })
-        const data = await res.json()
-
-        if (!res.ok) {
-          alert(data.error || 'Failed to normalize')
-          break
-        }
-
-        totalProcessed += data.processed
-        remaining = data.remaining
-
-        // Update progress in real-time
-        setNormStatus(prev => prev ? {
-          ...prev,
-          normalized: prev.total - remaining,
-          unnormalized: remaining,
-          percent_complete: prev.total ? Math.round(((prev.total - remaining) / prev.total) * 100) : 100,
-        } : null)
-
-        // Small delay to prevent overwhelming the server
-        if (remaining > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500))
-        }
-      }
-
-      // Refresh data after all normalization complete
-      await fetchData()
-    } catch (error) {
-      console.error('Normalization error:', error)
-      alert('Error during normalization')
-    }
-    setNormalizing(false)
-  }
 
   // Staples functions
   const analyzeStaples = async () => {
@@ -1228,48 +1172,6 @@ export default function HistoryPage() {
               </div>
             </div>
           </div>
-
-          {/* Normalization Banner - show if there are unnormalized items */}
-          {normStatus && normStatus.unnormalized > 0 && (
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center text-xl">
-                    ✨
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">Clean up item names</h3>
-                    <p className="text-sm text-gray-600">
-                      {normStatus.unnormalized} items have cryptic names like &quot;G JAPANSE CAI XIN220&quot;.
-                      AI can normalize them.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleNormalize}
-                  disabled={normalizing}
-                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 font-medium flex items-center gap-2"
-                >
-                  {normalizing ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      {normStatus.unnormalized} left ({normStatus.percent_complete}%)
-                    </>
-                  ) : (
-                    `Normalize ${normStatus.unnormalized} items`
-                  )}
-                </button>
-              </div>
-              {normalizing && (
-                <div className="mt-3 w-full bg-amber-200 rounded-full h-2">
-                  <div
-                    className="bg-amber-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${normStatus.percent_complete}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Monthly Spending Chart */}
           {analytics.monthly_spending.length > 0 && (

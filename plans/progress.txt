@@ -42,3 +42,25 @@ Tech stack: Next.js 16, Supabase, Google Gemini AI, Vercel
 - No new bugs discovered
 - Ready for user testing - have user try "bittergourd juice" example to verify fix
 - Next: Bug #2 (clean up item names) at priority 1
+
+## 2026-01-10: Bug #2 Fixed - Removed confusing "Clean up item names" feature (PRD id:2)
+**Problem:** Users confused by normalization banner in Groceries > Overview. Banner showed "stuck at 15%" progress, wasn't clear what it does (normalizes cryptic receipt item names like "G JAPANSE CAI XIN220" to "Japanese Cai Xin").
+
+**Solution:** Removed the feature entirely.
+- Feature was in groceries page (not inventory as PRD stated)
+- Only useful for legacy receipt items uploaded before normalization was added during upload
+- New receipt uploads already normalize items automatically
+- Confusing UX for minimal benefit - just cluttered the analytics page
+
+**Files changed:**
+- src/app/(dashboard)/dashboard/groceries/page.tsx - removed normStatus state, normalizing state, handleNormalize function, normalization banner JSX
+- Deleted: src/app/api/receipts/backfill-normalize/route.ts - no longer needed
+
+**Decisions:**
+- Removed vs fixed because: feature was niche (backfill-only), confusing to users, normalization now happens at upload time
+- No data migration needed - old unnormalized items still display their raw names, just slightly uglier
+
+**PM CHECK:**
+- No new bugs discovered
+- No user-facing functionality lost (new uploads still normalize)
+- Next: Feature #3 (food waste tracking) at priority 2

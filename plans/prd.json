@@ -31,9 +31,9 @@
         "Update any UI references"
       ],
       "files": [
-        "src/app/(dashboard)/dashboard/inventory/page.tsx"
+        "src/app/(dashboard)/dashboard/groceries/page.tsx"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": 3,
