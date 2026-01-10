@@ -1,0 +1,72 @@
+{
+  "features": [
+    {
+      "id": 1,
+      "category": "bug",
+      "priority": 0,
+      "description": "Recipe generation ignores special instructions - when user writes detailed request like 'want to make bittergourd juice with lemon, orange, turmeric, ginger to blend and strain for immunity booster', the system force-fits random inventory items instead of respecting the request",
+      "steps": [
+        "Read the suggestions API route at src/app/api/suggestions/route.ts",
+        "Find where the 'remarks' field is passed to the AI prompt",
+        "Update the prompt to prioritize user's special instructions over inventory-based suggestions",
+        "When remarks describe a specific recipe/dish, generate that dish using available ingredients",
+        "Add fallback: if user wants something not possible with inventory, say so clearly",
+        "Test with the immunity juice example"
+      ],
+      "files": [
+        "src/app/api/suggestions/route.ts"
+      ],
+      "passes": true
+    },
+    {
+      "id": 2,
+      "category": "bug",
+      "priority": 1,
+      "description": "Clean up item names feature is confusing and stuck at 15% - users don't understand what it does, and the batch processing is broken",
+      "steps": [
+        "Find the clean up item names feature in the codebase",
+        "Evaluate: should we remove it entirely or fix it?",
+        "If removing: delete the component and any related API routes",
+        "If fixing: make it a simple one-click 'auto-clean all' with clear progress",
+        "Update any UI references"
+      ],
+      "files": [
+        "src/app/(dashboard)/dashboard/inventory/page.tsx"
+      ],
+      "passes": false
+    },
+    {
+      "id": 3,
+      "category": "feature",
+      "priority": 2,
+      "description": "Add food waste tracking counter - show users how much food (kg/$) they've saved from being wasted, supporting civic good positioning",
+      "steps": [
+        "Track when items are consumed before expiry vs thrown away",
+        "Calculate estimated value saved",
+        "Add a dashboard widget showing 'X kg saved from waste'",
+        "Consider community total for social proof"
+      ],
+      "files": [
+        "src/app/(dashboard)/dashboard/page.tsx",
+        "src/app/api/inventory/[id]/route.ts"
+      ],
+      "passes": false
+    },
+    {
+      "id": 4,
+      "category": "feature",
+      "priority": 3,
+      "description": "Improve landing page for Reddit launch - add social proof, clearer value prop for food waste reduction angle",
+      "steps": [
+        "Update hero copy to emphasize food waste reduction",
+        "Add a 'waste saved' counter or placeholder",
+        "Consider adding testimonial section (even if placeholder)",
+        "Ensure mobile responsiveness is solid"
+      ],
+      "files": [
+        "src/app/page.tsx"
+      ],
+      "passes": false
+    }
+  ]
+}

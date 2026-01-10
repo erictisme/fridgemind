@@ -1,0 +1,44 @@
+# FridgeClue Progress Notes
+# Started: 2026-01-10
+
+## Context
+FridgeClue (formerly FridgeMind) is an AI-powered food inventory and meal planning app.
+Tech stack: Next.js 16, Supabase, Google Gemini AI, Vercel
+
+## Recent Work (before ralph)
+- Rebranded from FridgeMind to FridgeClue
+- Added PostHog analytics
+- Implemented rate limiting for API protection
+- Fixed various UI issues (card layouts, YouTube checkbox)
+- Domain: fridgeclue.vercel.app
+
+## Known Issues to Address
+1. Recipe generation ignores special instructions (priority bug)
+2. Clean up item names feature stuck/confusing
+3. Need food waste tracking for civic good positioning
+
+## Notes for next iteration
+- Start with Bug #1 (recipe generation) as it affects core UX
+- The suggestions API is at src/app/api/suggestions/route.ts
+- User's friend is actively using the app - don't break existing functionality
+
+## 2026-01-10: Bug #1 Fixed - Recipe generation now respects special instructions (PRD id:1)
+**Problem:** When user wrote detailed requests like "want to make bittergourd juice with lemon, orange, turmeric, ginger", system ignored request and generated random inventory-based recipes instead.
+
+**Solution:** Updated generateMealSuggestions in src/lib/gemini/vision.ts:
+- Added detection for specific recipe requests (keywords: make, want, juice, blend, soup, smoothie, salad, dish, recipe)
+- When detected, prompt now makes user's request the PRIMARY goal with **CRITICAL** priority
+- Prompt instructs AI to generate the EXACT dish requested, check inventory for matching ingredients, list what's missing
+- Added new priority tier that takes precedence over inventory-based optimization
+
+**Files changed:**
+- src/lib/gemini/vision.ts (lines 499-549) - prompt building logic
+
+**Decisions:**
+- Used keyword detection vs AI classification - simpler, no extra API call, good enough for common recipe terms
+- Made specific request override mustUseItems priority - user's explicit request > implicit inventory selection
+
+**PM CHECK:**
+- No new bugs discovered
+- Ready for user testing - have user try "bittergourd juice" example to verify fix
+- Next: Bug #2 (clean up item names) at priority 1

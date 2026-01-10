@@ -496,14 +496,42 @@ export async function generateMealSuggestions(
     ? `\nPREFERRED COOKING METHODS: ${cookingMethods.join(', ')}. Prioritize recipes using these methods.`
     : ''
 
-  // Build remarks instruction
+  // Build remarks instruction - check if it describes a specific recipe request
+  const hasSpecificRecipeRequest = remarks.trim().length > 0 && (
+    remarks.toLowerCase().includes('make') ||
+    remarks.toLowerCase().includes('want') ||
+    remarks.toLowerCase().includes('juice') ||
+    remarks.toLowerCase().includes('blend') ||
+    remarks.toLowerCase().includes('soup') ||
+    remarks.toLowerCase().includes('smoothie') ||
+    remarks.toLowerCase().includes('salad') ||
+    remarks.toLowerCase().includes('dish') ||
+    remarks.toLowerCase().includes('recipe')
+  )
+
   const remarksText = remarks.trim()
-    ? `\nUSER'S SPECIAL INSTRUCTIONS: "${remarks}". Follow these instructions carefully when designing recipes.`
+    ? hasSpecificRecipeRequest
+      ? `\n**CRITICAL - USER'S SPECIFIC RECIPE REQUEST**: "${remarks}"
+This is the user's PRIMARY goal. You MUST:
+1. Generate this EXACT dish/recipe as the FIRST suggestion
+2. Check which ingredients for this recipe exist in the inventory
+3. List any missing ingredients the user needs to buy
+4. If the requested dish is completely impossible with available ingredients, explain what's missing
+DO NOT ignore this request and suggest random inventory-based recipes instead.`
+      : `\nUSER'S SPECIAL INSTRUCTIONS: "${remarks}". Follow these instructions when designing recipes.`
     : ''
 
-  // Build priority instructions based on whether user selected items
+  // Build priority instructions based on whether user has specific request, selected items, or default
   let priorityInstructions: string
-  if (mustUseItems.length > 0) {
+  if (hasSpecificRecipeRequest) {
+    priorityInstructions = `PRIORITIES (CRITICAL - USER HAS A SPECIFIC REQUEST):
+1. The user has told you EXACTLY what they want to make - generate that recipe FIRST
+2. Use whatever ingredients from their inventory that match their request
+3. Clearly list what they have vs what they need to buy
+4. If generating additional recipes, those can use expiring items
+
+The user's request takes PRIORITY over inventory optimization.`
+  } else if (mustUseItems.length > 0) {
     priorityInstructions = `PRIORITIES (CRITICAL):
 1. EVERY recipe MUST use at least one item marked "⭐MUST USE" - this is the user's primary goal
 2. Also try to use items marked "(EXPIRED!)" or "(USE SOON!)" when possible
