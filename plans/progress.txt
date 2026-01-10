@@ -22,26 +22,49 @@ Tech stack: Next.js 16, Supabase, Google Gemini AI, Vercel
 - The suggestions API is at src/app/api/suggestions/route.ts
 - User's friend is actively using the app - don't break existing functionality
 
-## 2026-01-10: Bug #1 Fixed - Recipe generation now respects special instructions (PRD id:1)
+## 2026-01-10: Bug #1 ATTEMPTED but NOT FIXED (PRD id:1)
 **Problem:** When user wrote detailed requests like "want to make bittergourd juice with lemon, orange, turmeric, ginger", system ignored request and generated random inventory-based recipes instead.
 
-**Solution:** Updated generateMealSuggestions in src/lib/gemini/vision.ts:
+**First attempt (FAILED):** Updated generateMealSuggestions in src/lib/gemini/vision.ts:
 - Added detection for specific recipe requests (keywords: make, want, juice, blend, soup, smoothie, salad, dish, recipe)
 - When detected, prompt now makes user's request the PRIMARY goal with **CRITICAL** priority
 - Prompt instructs AI to generate the EXACT dish requested, check inventory for matching ingredients, list what's missing
-- Added new priority tier that takes precedence over inventory-based optimization
 
-**Files changed:**
-- src/lib/gemini/vision.ts (lines 499-549) - prompt building logic
+**WHY IT DIDN'T WORK:**
+The fix was superficial. The prompt structure is STILL inventory-first:
+- Line 560: "You are a creative home chef assistant. Generate exactly N practical meal suggestions based on this inventory."
+- This PRIMES the AI to think inventory-first regardless of any "CRITICAL" labels later in the prompt
+- The remarks/request gets buried after the inventory list
 
-**Decisions:**
-- Used keyword detection vs AI classification - simpler, no extra API call, good enough for common recipe terms
-- Made specific request override mustUseItems priority - user's explicit request > implicit inventory selection
+**REAL FIX NEEDED:**
+- When user has a specific request, the ENTIRE prompt must be restructured
+- First line should be: "The user wants to make: [request]. Help them make this using their inventory."
+- Request-first, inventory-supports - not inventory-first, request-second
+- The keyword detection approach is also too brittle
 
-**PM CHECK:**
-- No new bugs discovered
-- Ready for user testing - have user try "bittergourd juice" example to verify fix
-- Next: Bug #2 (clean up item names) at priority 1
+**Status:** Reverted to passes: false in PRD for re-attempt
+
+## 2026-01-10: NEW APPROACH for Recipe Generation (PRD id:1 rewritten)
+**Decision:** Instead of trying to detect user intent with fragile keyword matching, add an EXPLICIT mode toggle.
+
+**Two modes:**
+1. **"What can I make?"** (inventory mode) - current behavior, unchanged
+2. **"I want to make..."** (recipe mode) - new, recipe-first prompt
+
+**Why this is better:**
+- No ambiguity - user explicitly chooses their intent
+- No brittle keyword detection
+- Each mode gets a prompt optimized for its purpose
+- Clear mental model for users
+
+**Implementation plan:**
+- UI: Add mode toggle buttons at top of Inspire page
+- UI: Conditionally show ingredient picker (inventory mode) or recipe input (recipe mode)
+- API: Accept `mode` param, pass to generateMealSuggestions
+- Prompt: Two completely different prompts - inventory-first vs recipe-first
+- Cleanup: Remove the hasSpecificRecipeRequest keyword detection
+
+**See PRD id:1 for step-by-step instructions**
 
 ## 2026-01-10: Bug #2 Fixed - Removed confusing "Clean up item names" feature (PRD id:2)
 **Problem:** Users confused by normalization banner in Groceries > Overview. Banner showed "stuck at 15%" progress, wasn't clear what it does (normalizes cryptic receipt item names like "G JAPANSE CAI XIN220" to "Japanese Cai Xin").
@@ -91,4 +114,34 @@ Tech stack: Next.js 16, Supabase, Google Gemini AI, Vercel
 **PM CHECK:**
 - No new bugs discovered
 - Ready for user testing - widget appears after marking first item as "Ate it"
+- Next: Feature #4 (landing page improvements) at priority 3
+
+## 2026-01-10: Feature #1 Complete - Two-mode recipe suggestions (PRD id:1)
+**Problem:** User's recipe requests like "bittergourd juice with lemon, ginger, turmeric" were ignored because the prompt was inventory-first. Keyword detection approach failed - the prompt still primed AI to think inventory-first.
+
+**Solution:** Explicit mode toggle instead of brittle keyword detection.
+- Added mode toggle UI: "What can I make?" (inventory mode) vs "I want to make..." (recipe mode)
+- Recipe mode shows prominent text input for recipe request, hides ingredient multi-select
+- API accepts mode + recipeRequest params
+- Two completely different prompts in generateMealSuggestions:
+  - Inventory mode: unchanged "Generate meals based on inventory"
+  - Recipe mode: "The user wants to make: [request]. Help them make this."
+- Recipe-first prompt puts user request FIRST, inventory SECOND (key insight from failed first attempt)
+- Removed fragile hasSpecificRecipeRequest keyword detection code
+
+**Files changed:**
+- src/app/(dashboard)/dashboard/inspire/page.tsx - mode toggle, recipeRequest state, conditional UI, button styling
+- src/app/api/suggestions/route.ts - added mode + recipeRequest to request body, pass to generateMealSuggestions
+- src/lib/gemini/vision.ts - added mode/recipeRequest to MealSuggestionOptions, two separate prompts based on mode
+
+**Decisions:**
+- Two prompts vs single prompt with conditional sections - two prompts cleaner, no AI prompt confusion
+- Recipe mode shows cooking methods filter (still useful) but hides remarks (recipe input IS the main request)
+- Button changes color (purple) and shows truncated recipe name when in recipe mode
+- Kept recipe count selector for recipe mode - alternatives/variations still useful
+
+**PM CHECK:**
+- No new bugs discovered
+- Cleaned up unused imports (useRef, trackRecipeSearched, expandedSuggestion)
+- Ready for user testing - test "bittergourd juice with lemon, ginger, turmeric" in recipe mode
 - Next: Feature #4 (landing page improvements) at priority 3

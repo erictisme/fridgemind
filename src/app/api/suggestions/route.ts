@@ -31,12 +31,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { mustUseItems, recipeCount, challenge, cookingMethods, remarks } = body as {
+    const { mustUseItems, recipeCount, challenge, cookingMethods, remarks, mode, recipeRequest } = body as {
       mustUseItems?: string[]
       recipeCount?: number
       challenge?: boolean
       cookingMethods?: string[]
       remarks?: string
+      mode?: 'inventory' | 'recipe'
+      recipeRequest?: string
     }
 
     // Fetch user's inventory (exclude consumed items)
@@ -119,6 +121,8 @@ export async function POST(request: NextRequest) {
       mustUseItems: validatedMustUseItems,
       cookingMethods: cookingMethods || [],
       remarks: remarks || '',
+      mode: mode || 'inventory',
+      recipeRequest: recipeRequest || '',
     })
 
     return NextResponse.json({

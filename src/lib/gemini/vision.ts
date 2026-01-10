@@ -467,6 +467,8 @@ export interface MealSuggestionOptions {
   mustUseItems?: string[] // Items the user specifically wants to use
   cookingMethods?: string[] // Preferred cooking methods: oven, airfry, boil, steam, pan, etc.
   remarks?: string // Custom notes/instructions from user
+  mode?: 'inventory' | 'recipe' // inventory = what can I make?, recipe = I want to make...
+  recipeRequest?: string // The specific recipe/dish the user wants to make (when mode === 'recipe')
 }
 
 export async function generateMealSuggestions(
@@ -480,8 +482,10 @@ export async function generateMealSuggestions(
   const mustUseItems = options?.mustUseItems || []
   const cookingMethods = options?.cookingMethods || []
   const remarks = options?.remarks || ''
+  const mode = options?.mode || 'inventory'
+  const recipeRequest = options?.recipeRequest || ''
 
-  // Format inventory for prompt - highlight must-use items
+  // Format inventory for prompt
   const inventoryText = inventoryItems.map(item => {
     const daysUntil = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     const urgency = daysUntil <= 0 ? ' (EXPIRED!)' : daysUntil <= 2 ? ' (USE SOON!)' : daysUntil <= 5 ? ' (expiring soon)' : ''
@@ -496,43 +500,62 @@ export async function generateMealSuggestions(
     ? `\nPREFERRED COOKING METHODS: ${cookingMethods.join(', ')}. Prioritize recipes using these methods.`
     : ''
 
-  // Build remarks instruction - check if it describes a specific recipe request
-  const hasSpecificRecipeRequest = remarks.trim().length > 0 && (
-    remarks.toLowerCase().includes('make') ||
-    remarks.toLowerCase().includes('want') ||
-    remarks.toLowerCase().includes('juice') ||
-    remarks.toLowerCase().includes('blend') ||
-    remarks.toLowerCase().includes('soup') ||
-    remarks.toLowerCase().includes('smoothie') ||
-    remarks.toLowerCase().includes('salad') ||
-    remarks.toLowerCase().includes('dish') ||
-    remarks.toLowerCase().includes('recipe')
-  )
+  let prompt: string
 
-  const remarksText = remarks.trim()
-    ? hasSpecificRecipeRequest
-      ? `\n**CRITICAL - USER'S SPECIFIC RECIPE REQUEST**: "${remarks}"
-This is the user's PRIMARY goal. You MUST:
-1. Generate this EXACT dish/recipe as the FIRST suggestion
-2. Check which ingredients for this recipe exist in the inventory
-3. List any missing ingredients the user needs to buy
-4. If the requested dish is completely impossible with available ingredients, explain what's missing
-DO NOT ignore this request and suggest random inventory-based recipes instead.`
-      : `\nUSER'S SPECIAL INSTRUCTIONS: "${remarks}". Follow these instructions when designing recipes.`
-    : ''
+  // ============= RECIPE MODE =============
+  // User wants to make a specific dish - recipe request comes FIRST
+  if (mode === 'recipe' && recipeRequest.trim()) {
+    prompt = `The user wants to make: "${recipeRequest}"
 
-  // Build priority instructions based on whether user has specific request, selected items, or default
-  let priorityInstructions: string
-  if (hasSpecificRecipeRequest) {
-    priorityInstructions = `PRIORITIES (CRITICAL - USER HAS A SPECIFIC REQUEST):
-1. The user has told you EXACTLY what they want to make - generate that recipe FIRST
-2. Use whatever ingredients from their inventory that match their request
-3. Clearly list what they have vs what they need to buy
-4. If generating additional recipes, those can use expiring items
+Help them make this recipe. Your PRIMARY task is to generate this EXACT dish as the first recipe.
 
-The user's request takes PRIORITY over inventory optimization.`
-  } else if (mustUseItems.length > 0) {
-    priorityInstructions = `PRIORITIES (CRITICAL):
+Here is their current inventory (use what they have, list what they need):
+${inventoryText}
+${preferencesText}${cookingMethodsText}
+
+YOUR TASK:
+1. Generate the EXACT recipe the user requested as the FIRST item
+2. For ingredients_from_inventory: list which ingredients they HAVE in their inventory
+3. For additional_ingredients_needed: list what they NEED TO BUY
+4. If they don't have key ingredients, still provide the recipe - just list everything needed
+5. If generating ${recipeCount} recipes, make remaining recipes similar alternatives or variations
+
+IMPORTANT - The user's recipe request is the PRIORITY. Do not suggest random inventory-based recipes instead.
+
+Return ONLY valid JSON array with exactly ${recipeCount} recipe${recipeCount > 1 ? 's' : ''}:
+[
+  {
+    "name": "The recipe name",
+    "description": "Brief appetizing 1-sentence description",
+    "recipe_steps": ["Step 1 instruction", "Step 2 instruction", "Step 3 instruction"],
+    "estimated_time_minutes": number,
+    "difficulty": "easy" | "medium" | "hard",
+    "ingredients_from_inventory": ["items they HAVE"],
+    "additional_ingredients_needed": ["items they NEED TO BUY"],
+    "expiring_items_used": ["any expiring items that fit this recipe"],
+    "priority_score": 100 (first recipe = 100, alternatives = 80, 70, etc.)
+  }
+]
+
+IMPORTANT FORMATTING:
+- recipe_steps must be an array of strings, each step as a separate item
+- Do NOT use numbered prefixes like "1." in the steps
+- Recipe names should be lowercase/sentence case (e.g., "Garlic butter salmon" NOT "Garlic Butter Salmon")
+
+Do not include any text before or after the JSON array.`
+  }
+  // ============= INVENTORY MODE =============
+  // Classic "what can I make" - inventory-first approach
+  else {
+    // Build remarks instruction for inventory mode
+    const remarksText = remarks.trim()
+      ? `\nUSER'S SPECIAL INSTRUCTIONS: "${remarks}". Follow these instructions when designing recipes.`
+      : ''
+
+    // Build priority instructions
+    let priorityInstructions: string
+    if (mustUseItems.length > 0) {
+      priorityInstructions = `PRIORITIES (CRITICAL):
 1. EVERY recipe MUST use at least one item marked "⭐MUST USE" - this is the user's primary goal
 2. Also try to use items marked "(EXPIRED!)" or "(USE SOON!)" when possible
 3. Create practical, realistic meals a home cook can make
@@ -540,24 +563,24 @@ The user's request takes PRIORITY over inventory optimization.`
 
 The user specifically wants to cook with: ${mustUseItems.join(', ')}
 Build recipes AROUND these ingredients.`
-  } else {
-    priorityInstructions = `PRIORITIES:
+    } else {
+      priorityInstructions = `PRIORITIES:
 1. USE items marked "(EXPIRED!)" or "(USE SOON!)" first - these are highest priority
 2. Create practical, realistic meals a home cook can make
 3. Minimize additional ingredients needed
 4. Variety in meal types and cuisines`
-  }
+    }
 
-  // Distinctness rule for multiple recipes
-  const distinctnessRule = recipeCount > 1
-    ? `\nIMPORTANT - RECIPE DISTINCTNESS:
+    // Distinctness rule for multiple recipes
+    const distinctnessRule = recipeCount > 1
+      ? `\nIMPORTANT - RECIPE DISTINCTNESS:
 - Each recipe must be DISTINCT - different cooking style, cuisine, or main technique
 - MINIMIZE ingredient overlap between recipes - spread selected ingredients across different dishes
 - If user selected 7 ingredients for 3 recipes, each recipe should focus on 2-3 main ingredients, not all 7
 - Vary the cooking methods across recipes (e.g., one stir-fry, one baked, one soup)`
-    : ''
+      : ''
 
-  const prompt = `You are a creative home chef assistant. Generate exactly ${recipeCount} practical meal suggestion${recipeCount > 1 ? 's' : ''} based on this inventory.
+    prompt = `You are a creative home chef assistant. Generate exactly ${recipeCount} practical meal suggestion${recipeCount > 1 ? 's' : ''} based on this inventory.
 
 INVENTORY:
 ${inventoryText}
@@ -587,6 +610,7 @@ IMPORTANT FORMATTING:
 - Avoid AI-sounding names - use simple, natural recipe names a home cook would use
 
 Do not include any text before or after the JSON array.`
+  }
 
   const result = await model.generateContent(prompt)
   const response = await result.response

@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import RecipeSearchSection, { RecipeSearchResult } from './components/RecipeSearchSection'
 import SavedRecipesSection, { SavedRecipe } from './components/SavedRecipesSection'
-import { trackFeatureUsed, trackRecipeSearched, trackSuggestionViewed } from '@/lib/analytics'
+import { trackFeatureUsed } from '@/lib/analytics'
 
 interface RecipeIngredient {
   name: string
@@ -120,7 +120,6 @@ export default function InspirePage() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestions, setSuggestions] = useState<MealSuggestion[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
-  const [expandedSuggestion, setExpandedSuggestion] = useState<number | null>(null)
   const [inventoryCount, setInventoryCount] = useState(0)
   const [challengeMode, setChallengeMode] = useState(false)
   const [addingToList, setAddingToList] = useState<number | null>(null)
@@ -136,6 +135,8 @@ export default function InspirePage() {
   const [deletingInventoryItem, setDeletingInventoryItem] = useState<string | null>(null)
   const [confirmDeleteItem, setConfirmDeleteItem] = useState<{ id: string; name: string } | null>(null)
   const [remarks, setRemarks] = useState('')
+  const [recipeMode, setRecipeMode] = useState<'inventory' | 'recipe'>('inventory')
+  const [recipeRequest, setRecipeRequest] = useState('')
   const [currentRecipeIndex, setCurrentRecipeIndex] = useState(0)
   const [savingSuggestion, setSavingSuggestion] = useState(false)
   const [savedSuggestionIndex, setSavedSuggestionIndex] = useState<number | null>(null)
@@ -147,6 +148,8 @@ export default function InspirePage() {
     challenge: boolean
     cookingMethods: string[]
     remarks: string
+    mode: 'inventory' | 'recipe'
+    recipeRequest: string
   } | null>(null)
 
   // Input state
@@ -349,6 +352,8 @@ export default function InspirePage() {
             challenge,
             cookingMethods: selectedCookingMethods,
             remarks: remarks.trim(),
+            mode: recipeMode,
+            recipeRequest: recipeRequest.trim(),
           }
 
       // Save params for regeneration
@@ -1107,8 +1112,15 @@ export default function InspirePage() {
         <div className="bg-white rounded-xl border-2 border-emerald-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">What do you want to cook with?</h2>
-              <p className="text-sm text-gray-500">Tick = must use in recipes. Unticked items can still be suggested.</p>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {recipeMode === 'inventory' ? 'What do you want to cook with?' : 'What do you want to make?'}
+              </h2>
+              <p className="text-sm text-gray-500">
+                {recipeMode === 'inventory'
+                  ? 'Tick = must use in recipes. Unticked items can still be suggested.'
+                  : 'Tell us what you want to cook and we\'ll check your inventory.'
+                }
+              </p>
             </div>
             <button
               onClick={() => setShowIngredientPicker(false)}
@@ -1117,6 +1129,49 @@ export default function InspirePage() {
               Cancel
             </button>
           </div>
+
+          {/* Mode Toggle */}
+          <div className="mb-4 p-1 bg-gray-100 rounded-lg inline-flex">
+            <button
+              onClick={() => setRecipeMode('inventory')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                recipeMode === 'inventory'
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              What can I make?
+            </button>
+            <button
+              onClick={() => setRecipeMode('recipe')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                recipeMode === 'recipe'
+                  ? 'bg-white text-purple-700 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              I want to make...
+            </button>
+          </div>
+
+          {/* Recipe Mode: Show recipe request input */}
+          {recipeMode === 'recipe' && (
+            <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <label className="text-sm font-medium text-purple-900 block mb-2">
+                What do you want to make?
+              </label>
+              <input
+                type="text"
+                value={recipeRequest}
+                onChange={(e) => setRecipeRequest(e.target.value)}
+                placeholder="e.g., bittergourd juice with lemon, ginger, turmeric"
+                className="w-full px-4 py-3 border border-purple-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              />
+              <p className="text-xs text-purple-600 mt-2">
+                We'll generate this recipe and show which ingredients you have vs need to buy.
+              </p>
+            </div>
+          )}
 
           {/* Recipe count selector */}
           <div className="mb-4 p-3 bg-gray-50 rounded-lg">
@@ -1140,19 +1195,19 @@ export default function InspirePage() {
             </div>
           </div>
 
-          {/* Ingredient list */}
-          {loadingInventory ? (
+          {/* Ingredient list - only show in inventory mode */}
+          {recipeMode === 'inventory' && loadingInventory ? (
             <div className="text-center py-8">
               <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto"></div>
               <p className="text-sm text-gray-500 mt-2">Loading inventory...</p>
             </div>
-          ) : inventoryItems.length === 0 ? (
+          ) : recipeMode === 'inventory' && inventoryItems.length === 0 ? (
             <div className="text-center py-8">
               <span className="text-3xl mb-2 block">📦</span>
               <p className="text-gray-600">No items in inventory</p>
               <p className="text-sm text-gray-400">Add items to your inventory first</p>
             </div>
-          ) : (
+          ) : recipeMode === 'inventory' ? (
             <>
               {selectedIngredients.length > 0 && (
                 <div className="mb-3 flex flex-wrap gap-2">
@@ -1233,7 +1288,7 @@ export default function InspirePage() {
                 })}
               </div>
             </>
-          )}
+          ) : null}
 
           {/* Cooking Methods */}
           <div className="mt-4 p-3 bg-gray-50 rounded-lg">
@@ -1258,35 +1313,50 @@ export default function InspirePage() {
             </div>
           </div>
 
-          {/* Remarks/Notes */}
-          <div className="mt-4">
-            <label className="text-sm font-medium text-gray-700 block mb-2">
-              Special instructions (optional)
-            </label>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="e.g., I want something nutritious, grate the yacon not dice it, thinking to fry some noodles..."
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none text-sm"
-            />
-          </div>
+          {/* Remarks/Notes - only show in inventory mode (recipe mode has the recipe request input instead) */}
+          {recipeMode === 'inventory' && (
+            <div className="mt-4">
+              <label className="text-sm font-medium text-gray-700 block mb-2">
+                Special instructions (optional)
+              </label>
+              <textarea
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="e.g., I want something nutritious, grate the yacon not dice it, thinking to fry some noodles..."
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none text-sm"
+              />
+            </div>
+          )}
 
           {/* Generate button */}
           <div className="mt-4 flex gap-3">
             <button
               onClick={() => handleGenerateSuggestions(false)}
-              disabled={inventoryItems.length === 0}
-              className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={recipeMode === 'inventory' ? inventoryItems.length === 0 : !recipeRequest.trim()}
+              className={`flex-1 px-4 py-3 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                recipeMode === 'recipe'
+                  ? 'bg-purple-600 hover:bg-purple-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
             >
-              Generate {recipeCount} Recipe{recipeCount > 1 ? 's' : ''}
-              {selectedIngredients.length > 0 && ` using ${selectedIngredients.length} item${selectedIngredients.length > 1 ? 's' : ''}`}
+              {recipeMode === 'recipe' ? (
+                `Make: ${recipeRequest.slice(0, 30)}${recipeRequest.length > 30 ? '...' : ''}` || 'Enter a recipe'
+              ) : (
+                <>
+                  Generate {recipeCount} Recipe{recipeCount > 1 ? 's' : ''}
+                  {selectedIngredients.length > 0 && ` using ${selectedIngredients.length} item${selectedIngredients.length > 1 ? 's' : ''}`}
+                </>
+              )}
             </button>
           </div>
           <p className="text-xs text-gray-400 mt-2 text-center">
-            {selectedIngredients.length === 0
-              ? 'Will prioritize items expiring soon'
-              : `Recipes will be distinct, spreading ${selectedIngredients.length} items across dishes`}
+            {recipeMode === 'recipe'
+              ? 'We\'ll show which ingredients you have and what you need to buy'
+              : selectedIngredients.length === 0
+                ? 'Will prioritize items expiring soon'
+                : `Recipes will be distinct, spreading ${selectedIngredients.length} items across dishes`
+            }
           </p>
         </div>
       )}

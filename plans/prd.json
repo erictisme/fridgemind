@@ -2,19 +2,23 @@
   "features": [
     {
       "id": 1,
-      "category": "bug",
+      "category": "feature",
       "priority": 0,
-      "description": "Recipe generation ignores special instructions - when user writes detailed request like 'want to make bittergourd juice with lemon, orange, turmeric, ginger to blend and strain for immunity booster', the system force-fits random inventory items instead of respecting the request",
+      "description": "Add two-mode recipe suggestions: 'What can I make?' (inventory-first) vs 'I want to make...' (recipe-first). Currently users who type specific recipe requests get ignored because the prompt is inventory-first. Instead of detecting intent, give users an explicit mode toggle.",
       "steps": [
-        "Read the suggestions API route at src/app/api/suggestions/route.ts",
-        "Find where the 'remarks' field is passed to the AI prompt",
-        "Update the prompt to prioritize user's special instructions over inventory-based suggestions",
-        "When remarks describe a specific recipe/dish, generate that dish using available ingredients",
-        "Add fallback: if user wants something not possible with inventory, say so clearly",
-        "Test with the immunity juice example"
+        "STEP 1 - UI: In src/app/(dashboard)/dashboard/inspire/page.tsx, add a mode toggle at the top of the form with two buttons: 'What can I make?' (inventory mode, default) and 'I want to make...' (recipe mode)",
+        "STEP 2 - UI: When mode is 'recipe', hide the ingredient multi-select picker (not needed), show a prominent text input 'What do you want to make?', keep cooking methods filter, hide the remarks textarea (the recipe input IS the main request)",
+        "STEP 3 - UI: Store mode in state: const [mode, setMode] = useState<'inventory' | 'recipe'>('inventory')",
+        "STEP 4 - API: In src/app/api/suggestions/route.ts, add 'mode' to the request body destructuring and pass it to generateMealSuggestions options",
+        "STEP 5 - PROMPT: In src/lib/gemini/vision.ts generateMealSuggestions, add mode to options interface. If mode === 'recipe', use a COMPLETELY DIFFERENT prompt that starts with 'The user wants to make: [remarks]. Help them make this recipe. Here is their inventory:' - the recipe request must be FIRST, inventory SECOND",
+        "STEP 6 - PROMPT: For recipe mode, the prompt should: (1) generate the requested recipe as FIRST suggestion, (2) list ingredients they HAVE from inventory, (3) list ingredients they NEED TO BUY, (4) generate alternative similar recipes for remaining slots",
+        "STEP 7 - CLEANUP: Remove the fragile hasSpecificRecipeRequest keyword detection (lines ~499-522) - the explicit mode toggle makes it unnecessary",
+        "STEP 8 - VERIFY: Test inventory mode still works as before. Test recipe mode with 'bittergourd juice with lemon, ginger, turmeric' - first result should BE that juice with ingredients split into have/need"
       ],
       "files": [
-        "src/app/api/suggestions/route.ts"
+        "src/app/(dashboard)/dashboard/inspire/page.tsx",
+        "src/app/api/suggestions/route.ts",
+        "src/lib/gemini/vision.ts"
       ],
       "passes": true
     },
