@@ -25,6 +25,11 @@ interface SuggestedAction {
   }
 }
 
+interface WasteStats {
+  items_saved: number
+  items_wasted: number
+}
+
 interface HomeFeedData {
   context: {
     time_of_day: 'morning' | 'afternoon' | 'evening' | 'night'
@@ -36,6 +41,7 @@ interface HomeFeedData {
   primary_action: SuggestedAction | null
   secondary_actions: SuggestedAction[]
   expiring_items: ExpiringItem[]
+  waste_stats: WasteStats
 }
 
 const getGreeting = () => {
@@ -211,7 +217,7 @@ export default function DashboardPage() {
     )
   }
 
-  const { context, primary_action, secondary_actions, expiring_items } = feedData
+  const { context, primary_action, secondary_actions, expiring_items, waste_stats } = feedData
   const greeting = getGreeting()
 
   return (
@@ -453,6 +459,28 @@ export default function DashboardPage() {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Waste Saved Widget */}
+      {waste_stats.items_saved > 0 && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-5 border border-green-100">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center text-2xl">
+              🌱
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-green-700">{waste_stats.items_saved}</div>
+              <div className="text-sm text-green-600">
+                {waste_stats.items_saved === 1 ? 'item' : 'items'} saved from waste
+              </div>
+            </div>
+          </div>
+          {waste_stats.items_wasted > 0 && (
+            <div className="mt-3 text-xs text-gray-500">
+              {Math.round((waste_stats.items_saved / (waste_stats.items_saved + waste_stats.items_wasted)) * 100)}% save rate
+            </div>
+          )}
         </div>
       )}
 

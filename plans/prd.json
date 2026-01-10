@@ -50,7 +50,7 @@
         "src/app/(dashboard)/dashboard/page.tsx",
         "src/app/api/inventory/[id]/route.ts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": 4,

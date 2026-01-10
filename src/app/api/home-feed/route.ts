@@ -23,6 +23,11 @@ interface SuggestedAction {
   }
 }
 
+interface WasteStats {
+  items_saved: number
+  items_wasted: number
+}
+
 interface HomeFeedResponse {
   success: boolean
   context: {
@@ -35,6 +40,7 @@ interface HomeFeedResponse {
   primary_action: SuggestedAction | null
   secondary_actions: SuggestedAction[]
   expiring_items: ExpiringItem[]
+  waste_stats: WasteStats
 }
 
 function getTimeOfDay(): 'morning' | 'afternoon' | 'evening' | 'night' {
@@ -111,6 +117,26 @@ export async function GET() {
       .eq('user_id', user.id)
 
     const recipesCount = recipes?.length || 0
+
+    // Fetch waste stats from consumption_logs
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: consumedLogs } = await (supabase as any)
+      .from('consumption_logs')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('reason', 'consumed')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: wastedLogs } = await (supabase as any)
+      .from('consumption_logs')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('reason', 'wasted')
+
+    const wasteStats: WasteStats = {
+      items_saved: consumedLogs?.length || 0,
+      items_wasted: wastedLogs?.length || 0,
+    }
 
     // Build suggested actions based on context
     const actions: SuggestedAction[] = []
@@ -243,6 +269,7 @@ export async function GET() {
       primary_action: actions[0] || null,
       secondary_actions: actions.slice(1, 4),
       expiring_items: expiringItems.slice(0, 5),
+      waste_stats: wasteStats,
     }
 
     return NextResponse.json(response)

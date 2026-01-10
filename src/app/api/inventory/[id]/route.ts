@@ -80,6 +80,23 @@ export async function DELETE(
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
+    // Log to consumption_logs for waste tracking
+    // Map reason: eaten = consumed, bad = wasted, wrong = wrong_entry (not tracked)
+    if (reason && reason !== 'wrong') {
+      const logReason = reason === 'eaten' ? 'consumed' : 'wasted'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('consumption_logs')
+        .insert({
+          user_id: user.id,
+          item_name: item.name,
+          category: item.storage_category || 'misc',
+          quantity_consumed: item.quantity || 1,
+          reason: logReason,
+          consumed_at: new Date().toISOString(),
+        })
+    }
+
     // Always hard delete the item - soft delete caused items to reappear
     // The reason is logged for analytics but item is removed from inventory
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

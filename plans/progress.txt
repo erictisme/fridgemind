@@ -64,3 +64,31 @@ Tech stack: Next.js 16, Supabase, Google Gemini AI, Vercel
 - No new bugs discovered
 - No user-facing functionality lost (new uploads still normalize)
 - Next: Feature #3 (food waste tracking) at priority 2
+
+## 2026-01-10: Feature #3 Complete - Food waste tracking counter (PRD id:3)
+**Problem:** No visibility into how much food users saved from waste - needed for civic good positioning.
+
+**Solution:** Added waste tracking widget to dashboard showing items saved vs wasted.
+- Fixed /api/inventory/[id] DELETE to log to consumption_logs table (was missing)
+- Added waste_stats query to /api/home-feed (counts consumed vs wasted from consumption_logs)
+- Added dashboard widget showing "X items saved from waste" with save rate percentage
+
+**Files changed:**
+- src/app/api/inventory/[id]/route.ts (lines 83-98) - added consumption_logs insert on delete
+- src/app/api/home-feed/route.ts (lines 26-29, 121-139, 272) - added WasteStats interface, query, response
+- src/app/(dashboard)/dashboard/page.tsx (lines 28-31, 44, 220, 465-485) - added WasteStats interface, widget
+
+**Decisions:**
+- Tracked item count not kg/$ - simpler, no need to estimate weights/prices per item
+- Widget only shows when items_saved > 0 - no empty state clutter for new users
+- Included save rate % when items_wasted > 0 - gamification element
+- Mapped delete reasons: eaten=consumed, bad=wasted, wrong=not tracked
+
+**Scoped out for simplicity:**
+- Community total / social proof (would need aggregate API, privacy considerations)
+- kg/$ estimates (would need item weight/price lookup table)
+
+**PM CHECK:**
+- No new bugs discovered
+- Ready for user testing - widget appears after marking first item as "Ate it"
+- Next: Feature #4 (landing page improvements) at priority 3
